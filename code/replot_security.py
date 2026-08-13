@@ -7,7 +7,8 @@ Label dictionary is fixed here and copied verbatim into tables and prose.
   fig_sec_keylen.pdf  : SER vs key length L (Fig. 3)
   fig_sec_jam.pdf     : target-user SER vs JSR (Fig. 4)
   fig_sec_sens.pdf    : Eve SER vs key correlation (Fig. 5)
-  fig_sec_brute.pdf   : Eve SER vs number of key guesses (Fig. 6)
+  fig_sec_brute.pdf     : Eve SER vs number of key guesses (Fig. 6)
+  fig_sec_brute_rho.pdf : best key correlation vs guesses (Fig. 7)
 """
 from __future__ import annotations
 from pathlib import Path
@@ -159,14 +160,23 @@ def fig_jam():
 
 
 def fig_sens():
-    r = load("sec_sens.csv")
-    x = col(r, "rho")
+    """Key sensitivity of three schemes on one axis, the fraction of the
+    key the attacker holds. For keyed masking that fraction is the mask
+    correlation, for the permutation scheme the fraction of positions
+    placed correctly, for the index cipher the fraction of pad bits
+    known."""
+    r = load("sec_sens_cmp.csv")
+    x = col(r, "frac")
     fig, ax = plt.subplots()
-    ax.plot(x, col(r, "eve_ser"), color=C_EVE, marker="s", ls="-",
-            label=LBL["eve_key"])
+    ax.plot(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
+            label="Keyed masking")
+    ax.plot(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
+            label="Permutation key")
+    ax.plot(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
+            label="Index cipher")
     chance = 1.0 - (1.0 / 16.0) ** 4
-    ax.axhline(chance, color=C_CH, ls="-.", lw=0.9, label=LBL["chance"])
-    ax.set_xlabel(r"Key correlation $\kappa$")
+    ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
+    ax.set_xlabel("Fraction of the key recovered")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xlim(0, 1)
     ax.legend(loc="lower left")
@@ -174,21 +184,45 @@ def fig_sens():
 
 
 def fig_brute():
+    """Brute-force search against the three keyed schemes at the same
+    key length, each mapped through its own sensitivity curve."""
+    r = load("sec_brute_cmp.csv")
+    x = col(r, "K")
+    fig, ax = plt.subplots()
+    ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
+                label="Keyed masking")
+    ax.semilogx(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
+                label="Permutation key")
+    ax.semilogx(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
+                label="Index cipher")
+    kl = load("sec_keylen.csv")
+    legit = float([q for q in kl if int(q["L"]) == 16][0]["legit_ser"])
+    ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
+    ax.set_xlabel("Number of key guesses $K$")
+    ax.set_ylabel("Eavesdropper SER")
+    ax.set_ylim(-0.03, 1.05)
+    ax.legend(loc="center left")
+    save(fig, "fig_sec_brute")
+
+
+def fig_brute_rho():
+    """Best key correlation a search of size K reaches, per key length.
+    This is a property of the key space alone."""
     r = load("sec_brute.csv")
     fig, ax = plt.subplots()
     sty = {8: ("#c0392b", "o"), 16: ("#2c5fa8", "s"),
            32: ("#16a085", "v"), 64: ("#8e44ad", "P")}
-    for Lp in [8, 16, 32, 64]:
+    for Lp, (c, mk) in sty.items():
         rows = [row for row in r if int(row["L"]) == Lp]
-        ks = [float(row["K"]) for row in rows]
-        ser = [float(row["eve_ser"]) for row in rows]
-        c, mk = sty[Lp]
-        ax.semilogx(ks, ser, color=c, marker=mk, ls="-",
-                    label=f"$L={Lp}$")
+        ax.semilogx([float(x["K"]) for x in rows],
+                    [float(x["best_rho"]) for x in rows],
+                    color=c, marker=mk, ls="-", label=f"$L={Lp}$")
+    ax.axhline(0.96, color=C_CH, ls="-.", lw=0.9, label="Break threshold")
     ax.set_xlabel("Number of key guesses $K$")
-    ax.set_ylabel("Eavesdropper SER")
-    ax.legend(loc="lower left")
-    save(fig, "fig_sec_brute")
+    ax.set_ylabel(r"Best key correlation $\kappa$")
+    ax.set_ylim(0, 1.05)
+    ax.legend(loc="upper left")
+    save(fig, "fig_sec_brute_rho")
 
 
 def fig_real():
@@ -221,7 +255,13 @@ def fig_kpa():
         ser = [float(row["eve_ser"]) for row in rows]
         ax.semilogx(n, ser, color=c, marker=mk, ls="-",
                     label=f"{int(snr)} dB")
-    ax.axhline(0.304, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
+    # legitimate reference measured with the SAME estimator as the
+    # eavesdropper curves, namely the four-user average of eval_ser_sse
+    # at L=16, taken from sec_keylen.csv rather than from the user-1
+    # convention of the scheme-comparison table
+    kl = load("sec_keylen.csv")
+    legit = float([r for r in kl if int(r["L"]) == 16][0]["legit_ser"])
+    ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
     ax.set_xlabel("Known-plaintext frames $N$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xscale("log", base=2)
@@ -236,6 +276,7 @@ def main():
     try:
         fig_sens()
         fig_brute()
+        fig_brute_rho()
     except FileNotFoundError:
         print("[skip] attack-difficulty CSVs not present yet")
     try:

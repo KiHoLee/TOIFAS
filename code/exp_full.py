@@ -249,33 +249,42 @@ def stage_D():
     fams = {}
     # random fixed masks
     set_seed(7); fams["random"] = random_mask(U, Lp)
-    # Walsh-Hadamard rows (orthogonal)
-    Hd = torch.tensor(hadamard(Lp)[:U], dtype=torch.float32)  # ||row||=sqrt(Lp)
+    # Walsh-Hadamard rows (orthogonal). Row 0 of the Sylvester
+    # construction is the all-ones vector, which any adversary can write
+    # down, so it is excluded and the users take rows 1 to U.
+    Hd = torch.tensor(hadamard(Lp)[1:U + 1], dtype=torch.float32)
     fams["hadamard"] = Hd
+    ones = torch.ones(U, Lp)          # the cheapest possible guess
     rows = []
     for name, W in fams.items():
         m = get_model(P=P, vu=vu, d=d, U=U, iters=4000, freeze_W=W)
         lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
         ew = eve_wrong_mask(U, Lp, seed=20260813).to(DEVICE)
         ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
+        ev1 = eval_ser_eve(m, ones, [10.0], frames=500_000)[0]
         xc = mean_abs_xcorr(m.masks().detach())
-        rows.append((name, lg, ev, xc))
-        print(f"   {name:9s} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f}")
+        rows.append((name, lg, ev, ev1, xc))
+        print(f"   {name:9s} legit={lg:.2e} eve={ev:.3f} ones={ev1:.3f} "
+              f"xcorr={xc:.4f}")
     # learned masks (plain cross entropy)
     m = get_model(P=P, vu=vu, d=d, U=U, iters=4000)
     lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
     ew = eve_wrong_mask(U, Lp, seed=20260813).to(DEVICE)
     ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
+    ev1 = eval_ser_eve(m, ones, [10.0], frames=500_000)[0]
     xc = mean_abs_xcorr(m.masks().detach())
-    rows.append(("learned", lg, ev, xc))
-    print(f"   {'learned':9s} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f}")
+    rows.append(("learned", lg, ev, ev1, xc))
+    print(f"   {'learned':9s} legit={lg:.2e} eve={ev:.3f} ones={ev1:.3f} "
+          f"xcorr={xc:.4f}")
     # regularized key learning (orthogonality + constant modulus)
     mr = get_model_reg(P=P, vu=vu, d=d, U=U, iters=4000)
     lgr = eval_ser_sse(mr, [10.0], frames=500_000)[0]
     evr = eval_ser_eve(mr, ew, [10.0], frames=500_000)[0]
+    evr1 = eval_ser_eve(mr, ones, [10.0], frames=500_000)[0]
     xcr = mean_abs_xcorr(mr.masks().detach())
-    rows.append(("learned_reg", lgr, evr, xcr))
-    print(f"   {'learn_reg':9s} legit={lgr:.2e} eve={evr:.3f} xcorr={xcr:.4f}")
+    rows.append(("learned_reg", lgr, evr, evr1, xcr))
+    print(f"   {'learn_reg':9s} legit={lgr:.2e} eve={evr:.3f} ones={evr1:.3f} "
+          f"xcorr={xcr:.4f}")
     # jamming robustness of plain vs regularized keys (blind jammer)
     jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
     jb_plain = eval_ser_jam(m, 10.0, jsr, frames=300_000, mode="blind")
@@ -284,7 +293,8 @@ def stage_D():
               ["jsr_db", "plain", "regularized"],
               [(j, jb_plain[i], jb_reg[i]) for i, j in enumerate(jsr)])
     write_csv(DATA / "sec_maskfam.csv",
-              ["family", "legit_ser", "eve_ser", "mask_xcorr"], rows)
+              ["family", "legit_ser", "eve_ser", "eve_ones_ser",
+               "mask_xcorr"], rows)
 
 
 @torch.no_grad()
@@ -407,9 +417,11 @@ def stage_E():
 
 @torch.no_grad()
 def eval_scheme_permuted_eve(model: SSE, snr_db, frames, perms,
-                             chunk=100_000, seed=777):
+                             chunk=100_000, seed=777, eve_perms=None):
     """Eve for S3: sees the per-user permuted tx, holds the PUBLIC masks
-    but not the permutation, decodes user 0 raw."""
+    but not the permutation, decodes user 0 raw. When eve_perms is given,
+    Eve first undoes the permutation she believes was used, which models
+    an attacker holding a partially recovered permutation key."""
     model.eval().to(DEVICE)
     Bn = model.unit_codebook()
     true_m = model.masks()
@@ -431,6 +443,9 @@ def eval_scheme_permuted_eve(model: SSE, snr_db, frames, perms,
         y_rx = h[:, None, None] * y + sigma * torch.randn(
             n, model.P, model.L, device=DEVICE)
         r = y_rx / h[:, None, None].clamp_min(1e-6)
+        if eve_perms is not None:
+            inv = torch.argsort(eve_perms[0]).to(r.device)
+            r = r.reshape(n, d)[:, inv].reshape(n, model.P, model.L)
         cand = Bn * true_m[0][None, :]
         scores = torch.einsum("npl,vl->npv", r, cand)
         wrong = (scores.argmax(-1) != digits[:, 0]).any(dim=1)
@@ -508,6 +523,128 @@ def stage_F():
               ["L", "K", "best_rho", "eve_ser"], rows)
 
 
+def partial_perm(true_perm: torch.Tensor, frac: float, gen: torch.Generator):
+    """A permutation that agrees with true_perm on a fraction frac of the
+    positions and is scrambled on the rest, which is what an attacker
+    holding part of a permutation key would have."""
+    d = true_perm.numel()
+    k = int(round(frac * d))
+    idx = torch.randperm(d, generator=gen)
+    keep, rest = idx[:k], idx[k:]
+    out = true_perm.clone()
+    if rest.numel() > 1:
+        out[rest] = true_perm[rest][torch.randperm(rest.numel(), generator=gen)]
+    return out
+
+
+TRIALS_PERM = 60
+
+
+def stage_I():
+    """Key sensitivity of three schemes on one axis.
+
+    The axis is the fraction of the key the attacker has recovered. For
+    the proposed scheme that fraction is the normalized correlation
+    between the guessed and the true mask. For the permutation scheme it
+    is the fraction of positions the guessed permutation places
+    correctly. For the index cipher it is the fraction of pad bits the
+    attacker knows, whose error rate is the closed form
+    1 - 2^{-(1-f) log2 V} because the unknown bits are uniform.
+    """
+    print("[I] key sensitivity across schemes ...")
+    m = get_model(iters=4000)
+    F = 600_000          # more frames per point for a smooth curve
+    TRIALS_MASK = 12     # independent substitute keys per point
+    d = m.P * m.L
+    true_m = m.masks().detach().cpu()
+    gen = torch.Generator().manual_seed(31)
+    gp = torch.Generator().manual_seed(11)
+    gperm = torch.randperm(d, generator=gp)
+    perms = gperm[None].repeat(m.users, 1)
+    # a marker grid comparable to the other result figures, with the
+    # spacing tightened only where the curves fall
+    fracs = [0.0, 0.2, 0.4, 0.6, 0.75, 0.85, 0.9, 0.94, 0.97, 1.0]
+    bits = math.log2(m.V)
+    rows = []
+    for f in fracs:
+        acc_m = []
+        for t in range(TRIALS_MASK):
+            mt = correlated_masks(true_m, f, gen)
+            acc_m.append(eval_ser_eve(m, mt, [10.0],
+                                      frames=F // TRIALS_MASK,
+                                      seed=777 + 17 * t)[0])
+        ser_mask = sum(acc_m) / len(acc_m)
+        # a partial permutation is combinatorially lumpy, so the point
+        # is averaged over independent draws of which positions the
+        # attacker holds
+        acc = []
+        for t in range(TRIALS_PERM):
+            pp = partial_perm(gperm, f, gen)
+            pperms = pp[None].repeat(m.users, 1)
+            acc.append(eval_scheme_permuted_eve(m, 10.0, F // TRIALS_PERM,
+                                                perms, eve_perms=pperms,
+                                                seed=777 + 13 * t))
+        ser_perm = sum(acc) / len(acc)
+        ser_pad = 1.0 - 2.0 ** (-(1.0 - f) * bits)
+        rows.append((f, ser_mask, ser_perm, ser_pad))
+        print(f"   f={f:.3f} mask={ser_mask:.4f} perm={ser_perm:.4f} "
+              f"pad={ser_pad:.4f}")
+    write_csv(DATA / "sec_sens_cmp.csv",
+              ["frac", "ser_mask", "ser_perm", "ser_pad"], rows)
+
+
+def stage_J():
+    """Brute-force search against three schemes at the same key length.
+
+    Keyed masking: K random unit keys, keep the best correlation, map it
+    through the measured sensitivity curve of stage I.
+    Permutation key: K random permutations of the d positions, keep the
+    one that places the most positions correctly, map the resulting
+    fraction through the same sensitivity curve.
+    Index cipher: K random pads out of the 2^{log2 V} possible pads, so
+    the attacker succeeds with probability K/V on each symbol.
+    """
+    print("[J] brute-force search across schemes ...")
+    import numpy as np
+    cmp_rows = list(csv_rows(DATA / "sec_sens_cmp.csv"))
+    f_arr = np.array([float(r["frac"]) for r in cmp_rows])
+    mask_arr = np.array([float(r["ser_mask"]) for r in cmp_rows])
+    perm_arr = np.array([float(r["ser_perm"]) for r in cmp_rows])
+
+    d, L, V = 64, 16, 65536
+    ks = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000]
+    rng = np.random.default_rng(2026)
+    trials = 400
+    rows = []
+    for K in ks:
+        # keyed masking: best |first coordinate| of K random unit vectors
+        best_kappa = np.empty(trials)
+        best_frac = np.empty(trials)
+        for t in range(trials):
+            g = rng.standard_normal((K, L))
+            g /= np.linalg.norm(g, axis=1, keepdims=True)
+            best_kappa[t] = np.abs(g[:, 0]).max()
+            # permutation: fraction of fixed points, Binomial(d, 1/d) per
+            # draw, so the best of K draws is the max of K such counts
+            best_frac[t] = rng.binomial(d, 1.0 / d, size=K).max() / d
+        ser_mask = float(np.mean(np.interp(best_kappa, f_arr, mask_arr)))
+        ser_perm = float(np.mean(np.interp(best_frac, f_arr, perm_arr)))
+        ser_pad = 1.0 - min(1.0, K / V)
+        rows.append((K, ser_mask, ser_perm, ser_pad,
+                     float(best_kappa.mean()), float(best_frac.mean())))
+        print(f"   K={K:8d} mask={ser_mask:.4f} perm={ser_perm:.4f} "
+              f"pad={ser_pad:.4f}")
+    write_csv(DATA / "sec_brute_cmp.csv",
+              ["K", "ser_mask", "ser_perm", "ser_pad",
+               "best_kappa", "best_frac"], rows)
+
+
+def csv_rows(path):
+    import csv as _csv
+    with open(path) as f:
+        yield from _csv.DictReader(f)
+
+
 def main():
     print(f"device={DEVICE}")
     stage_A()
@@ -516,6 +653,8 @@ def main():
     stage_D()
     stage_E()
     stage_F()
+    stage_I()
+    stage_J()
     print("[done] full-scale security CSVs in", DATA)
 
 
