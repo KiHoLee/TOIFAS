@@ -27,6 +27,7 @@ code/
   exp_full.py           stages A-F: SNR sweep, key length, jamming, key families,
                         scheme comparison, attack difficulty
   exp_kpa.py            stage H: known-plaintext attack on the key
+  exp_refresh.py        stage K: the key-refresh layer, invariance group
   exp_real_sec.py       stage G: real BERT WordPiece token streams
   verify_math.py        closed-form checks V1-V5 against Monte Carlo, PASS/FAIL
   replot_security.py    every result figure, from data/ to fig/
@@ -70,15 +71,19 @@ Seeds are fixed: training 1, evaluation 777, attacker key guess
 | Scheme comparison table | `exp_full.stage_E` | `sec_compare.csv` |
 | Key family table | `exp_full.stage_D` | `sec_maskfam.csv`, `sec_regjam.csv` |
 | Headline recovery table | `exp_real_sec` | `real_sec_stats.json` |
+| Key refresh tables | `exp_refresh` | `refresh.csv`, `refresh_kpa.csv` |
 
 ## Security scope
 
 The analysis covers an adversary that observes transmitted frames. The
 masking is linear, so an adversary that also learns the indices some
 frames carried recovers the key from a few frames, which `exp_kpa.py`
-measures. The key must therefore be refreshed per coherence block from
-a shared seed, as the paper states. This repository implements the
-measurement of that limit, not a key-refresh layer.
+measures. The key must therefore be refreshed per coherence block from a shared
+seed. `exp_refresh.py` implements that layer and shows why it has to
+draw from the transformations that leave the decision statistic
+invariant: a refresh that installs fresh orthogonal keys instead costs
+the legitimate users a factor of nearly three, while the invariant
+refresh is free and raises the per-block key to 64.8 bits.
 
 ## License
 
