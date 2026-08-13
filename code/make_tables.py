@@ -1,4 +1,4 @@
-"""Generate the LaTeX rows of the three result tables from the CSVs, so
+"""Generate the LaTeX rows of every result table from the CSVs, so
 that every table in the paper is reproducible from data/ (TIFS mandate).
 Prints the tabular bodies; paste into main.tex without edits.
 """
@@ -48,8 +48,17 @@ def compare_table():
     rows = list(csv.DictReader(open(DATA / "sec_compare.csv")))
     order = ["public_mask", "perm_key", "index_cipher", "oma_plain", "proposed"]
     rows.sort(key=lambda r: order.index(r["scheme"]))
+    # stage_E does not jam the orthogonal reference, because the jammer an
+    # OMA user faces is targeted at public slots rather than mask-matched
+    # or mask-blind. stage_L measures that case, so the cell comes from
+    # there instead of being left empty.
+    jam = {float(r["jsr_db"]): r
+           for r in csv.DictReader(open(DATA / "sec_jam_cmp.csv"))}
+    oma_jam = jam[0.0]["oma_targeted"]
     for r in rows:
         b = r["scheme"] == "proposed"
+        if r["scheme"] == "oma_plain" and f3(r["jam0_ser"]) == "--":
+            r["jam0_ser"] = oma_jam
         cells = [cell(r[k], b) for k in
                  ("legit_ser", "eve_out", "eve_in", "jam0_ser")]
         print(f"{NAME[r['scheme']]} & " + " & ".join(cells) + r" \\")
