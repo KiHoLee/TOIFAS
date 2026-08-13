@@ -1,0 +1,523 @@
+"""Full-scale security evaluation for paper 11 (run under WSL CUDA).
+
+Reuses the SSE transmit/receive core from sse_lib.py and adds an
+eavesdropper receiver, a jammer channel, and structured mask families.
+Main configuration d=64, P=4, Vu=16 (V=Vu^P=65,536), U=4 users, matching
+the language-model token vocabulary scale.
+
+Stages (each writes a CSV to ../data; figures come from replot_security.py
+and the two result tables from make_tables.py):
+  A  security vs SNR       -> sec_snr.csv      (Fig. 2)
+  B  key length            -> sec_keylen.csv   (Fig. 3)
+  C  jamming vs JSR        -> sec_jam.csv      (Fig. 4)
+  D  mask families         -> sec_maskfam.csv  (key-family table)
+  E  scheme comparison     -> sec_compare.csv  (comparison table)
+  F  attack difficulty     -> sec_sens.csv, sec_brute.csv (Figs. 5-6)
+
+Experiment scripts write CSV only, never draw. Fixed seeds.
+"""
+from __future__ import annotations
+import math
+import numpy as np
+import torch
+
+import sse_lib as L
+from sse_lib import (SSE, rayleigh_gain, snr_to_sigma2, write_csv, set_seed,
+                     eval_ser_sse, oma_ser, DATA, DEVICE)
+
+
+# ----------------------------------------------------------------------
+# eavesdropper: correlate the transmitted (true-mask) frame with a
+# substitute mask the eavesdropper does not truly hold.
+# ----------------------------------------------------------------------
+@torch.no_grad()
+def eval_ser_eve(model: SSE, eve_masks: torch.Tensor, snr_list,
+                 frames: int, chunk: int = 100_000, seed: int = 777):
+    model.eval().to(DEVICE)
+    Bn = model.unit_codebook()
+    true_m = model.masks()
+    eve_masks = eve_masks.to(DEVICE)
+    c = model.c
+    out = []
+    for snr_db in snr_list:
+        g = torch.Generator(device="cpu").manual_seed(seed + int(10 * snr_db))
+        err = tot = 0
+        for n0 in range(0, frames, chunk):
+            n = min(chunk, frames - n0)
+            digits = torch.randint(model.vu, (n, model.users, model.P),
+                                   generator=g).to(DEVICE)
+            e = Bn[digits] / math.sqrt(model.P)
+            y = (e * true_m[None, :, None, :]).sum(dim=1) / c
+            h = rayleigh_gain((n, model.users), device=DEVICE)
+            sigma = snr_to_sigma2(snr_db, model.d).to(DEVICE).sqrt()
+            noise = torch.randn(n, model.users, model.P, model.L, device=DEVICE)
+            y_rx = h[:, :, None, None] * y[:, None] + sigma * noise
+            r = y_rx / h[:, :, None, None].clamp_min(1e-6)
+            cand = Bn[None, :, :] * eve_masks[:, None, :]
+            scores = torch.einsum("nupl,uvl->nupv", r, cand)
+            wrong = (scores.argmax(-1) != digits).any(dim=2)
+            err += int(wrong.sum()); tot += n * model.users
+        out.append(err / tot)
+    return out
+
+
+@torch.no_grad()
+def eval_ser_jam(model: SSE, snr_db, jsr_db_list, frames: int,
+                 chunk: int = 100_000, seed: int = 777, mode: str = "blind",
+                 target: int = 0):
+    """Returns the target-user SER (user `target`, the user a mask-matched
+    jammer aims at). The mask-matched jammer aligns with the target key,
+    which a mask-blind jammer cannot do. Reporting the target-user SER,
+    rather than the user average, isolates how efficiently each jammer can
+    degrade a chosen victim (Proposition 2)."""
+    model.eval().to(DEVICE)
+    Bn = model.unit_codebook()
+    true_m = model.masks()
+    c = model.c
+    sigma = snr_to_sigma2(snr_db, model.d).to(DEVICE).sqrt()
+    # matched jammer aligns with the target user's masked codeword mean
+    # direction (needs that user's secret key)
+    w_fixed = (Bn[target][None, :] * true_m[target][None, :]).repeat(model.P, 1)
+    w_fixed = w_fixed / w_fixed.norm()
+    out = []
+    for jsr_db in jsr_db_list:
+        jsr = 10.0 ** (jsr_db / 10.0)
+        g = torch.Generator(device="cpu").manual_seed(seed + int(10 * jsr_db))
+        err = tot = 0
+        for n0 in range(0, frames, chunk):
+            n = min(chunk, frames - n0)
+            digits = torch.randint(model.vu, (n, model.users, model.P),
+                                   generator=g).to(DEVICE)
+            e = Bn[digits] / math.sqrt(model.P)
+            y = (e * true_m[None, :, None, :]).sum(dim=1) / c
+            h = rayleigh_gain((n, model.users), device=DEVICE)
+            hJ = rayleigh_gain((n,), device=DEVICE)
+            if mode == "matched":
+                w = w_fixed[None].expand(n, model.P, model.L)
+            else:
+                w = torch.randn(n, model.P, model.L, device=DEVICE)
+                w = w / w.reshape(n, -1).norm(dim=1)[:, None, None].clamp_min(1e-8)
+            jam = (hJ * math.sqrt(jsr))[:, None, None] * w
+            noise = torch.randn(n, model.users, model.P, model.L, device=DEVICE)
+            y_rx = h[:, :, None, None] * y[:, None] + jam[:, None] + sigma * noise
+            r = y_rx / h[:, :, None, None].clamp_min(1e-6)
+            cand = Bn[None, :, :] * true_m[:, None, :]
+            scores = torch.einsum("nupl,uvl->nupv", r, cand)
+            wrong = (scores.argmax(-1) != digits).any(dim=2)  # (n,U)
+            err += int(wrong[:, target].sum()); tot += n
+        out.append(err / tot)
+    return out
+
+
+def hadamard(n: int) -> np.ndarray:
+    """Sylvester construction, n a power of two."""
+    H = np.array([[1.0]])
+    while H.shape[0] < n:
+        H = np.block([[H, H], [H, -H]])
+    return H
+
+
+def mean_abs_xcorr(masks: torch.Tensor) -> float:
+    m = masks / masks.norm(dim=1, keepdim=True).clamp_min(1e-8)
+    G = (m @ m.T).abs()
+    U = m.shape[0]
+    off = G[~torch.eye(U, dtype=torch.bool, device=G.device)]
+    return float(off.mean())
+
+
+def random_mask(U, Lp):
+    W = torch.randn(U, Lp)
+    return W / W.norm(dim=1, keepdim=True) * math.sqrt(Lp)
+
+
+def eve_wrong_mask(U, Lp, seed):
+    g = torch.Generator().manual_seed(seed)
+    W = torch.randn(U, Lp, generator=g)
+    return W / W.norm(dim=1, keepdim=True) * math.sqrt(Lp)
+
+
+def get_model(P=4, vu=16, d=64, U=4, iters=4000, seed=1, freeze_W=None, tag=""):
+    """Train an SSE model, optionally with fixed (frozen) masks."""
+    set_seed(seed)
+    m = SSE(P=P, vu=vu, d=d, users=U).to(DEVICE)
+    if freeze_W is not None:
+        with torch.no_grad():
+            m.W.copy_(freeze_W.to(DEVICE))
+        m.W.requires_grad_(False)
+    L.train_sse(m, iters=iters, batch=256, lr=3e-3, seed=seed)
+    m.calibrate_power()
+    return m
+
+
+def stage_A():
+    print("[A] security vs SNR (V=65536) ...")
+    m = get_model(iters=4000)
+    snr = [0.0, 4.0, 8.0, 12.0, 16.0, 20.0]
+    frames = 800_000
+    legit = eval_ser_sse(m, snr, frames=frames)
+    ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
+    eve_w = eval_ser_eve(m, ew, snr, frames=frames)
+    eve_n = eval_ser_eve(m, torch.ones(m.users, m.L), snr, frames=frames)
+    # conventional public-mask scheme: the eavesdropper holds the same
+    # (public) masks and decodes exactly like a legitimate user
+    eve_p = eval_ser_eve(m, m.masks().detach().cpu(), snr, frames=frames)
+    oma = oma_ser(snr, bits=int(math.log2(m.V)))
+    chance = 1.0 - (1.0 / m.vu) ** m.P
+    write_csv(DATA / "sec_snr.csv",
+              ["snr_db", "legit", "eve_wrong", "eve_none", "eve_public",
+               "oma", "chance"],
+              [(s, legit[i], eve_w[i], eve_n[i], eve_p[i], oma[i], chance)
+               for i, s in enumerate(snr)])
+    print("   legit:", [f"{v:.2e}" for v in legit])
+    print("   eve  :", [f"{v:.3f}" for v in eve_w])
+
+
+def train_sse_reg(m: SSE, iters=4000, batch=256, lr=3e-3, seed=1,
+                  lam_orth=1.0, lam_flat=0.1):
+    """Regularized key learning for improved spreading and de-spreading.
+    Adds to the digit-wise cross entropy (i) an orthogonality penalty on
+    the off-diagonal key Gram entries, which reduces cross-user
+    interference and residual leakage, and (ii) a constant-modulus
+    penalty that flattens the key spectrum, which maximizes the spreading
+    of a mask-blind jammer (Proposition 2: the jammer concentration on
+    candidate i is sum_k w_k^2 e_{i,k}^2 weighted through the key, and a
+    flat key removes any low-energy entries a jammer could exploit)."""
+    set_seed(seed)
+    m.to(DEVICE)
+    opt = torch.optim.Adam(m.parameters(), lr=lr)
+    ce = torch.nn.CrossEntropyLoss()
+    for it in range(1, iters + 1):
+        digits = torch.randint(m.vu, (batch, m.users, m.P), device=DEVICE)
+        snr = torch.empty(batch).uniform_(0.0, 20.0)
+        m.calibrate_power(8192)
+        scores = m(digits, snr) * m.logit_scale.exp()
+        loss = ce(scores.reshape(-1, m.vu), digits.reshape(-1))
+        mk = m.masks()
+        G = (mk @ mk.T) / m.L
+        off = G - torch.eye(m.users, device=G.device)
+        loss = loss + lam_orth * off.pow(2).sum()
+        loss = loss + lam_flat * (mk.pow(2) - 1.0).pow(2).mean()
+        opt.zero_grad(); loss.backward(); opt.step()
+    m.calibrate_power()
+    return m
+
+
+def get_model_reg(P=4, vu=16, d=64, U=4, iters=4000, seed=1):
+    set_seed(seed)
+    m = SSE(P=P, vu=vu, d=d, users=U).to(DEVICE)
+    train_sse_reg(m, iters=iters, seed=seed)
+    return m
+
+
+def stage_B():
+    print("[B] key length (dense grid so the curve is smooth) ...")
+    oma10 = oma_ser([10.0], bits=16)[0]
+    rows = []
+    for d in [16, 24, 32, 48, 64, 96, 128, 192, 256]:
+        m = get_model(d=d, iters=4000)
+        lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
+        ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
+        ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
+        xc = mean_abs_xcorr(m.masks().detach())
+        rows.append((m.L, d, lg, ev, xc, oma10))
+        print(f"   L={m.L:4d} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f}")
+    write_csv(DATA / "sec_keylen.csv",
+              ["L", "d", "legit_ser", "eve_ser", "mask_xcorr", "oma"], rows)
+
+
+def stage_C():
+    print("[C] jamming vs JSR ...")
+    m = get_model(iters=4000)
+    jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+    blind = eval_ser_jam(m, 10.0, jsr, frames=500_000, mode="blind", target=0)
+    matched = eval_ser_jam(m, 10.0, jsr, frames=500_000, mode="matched", target=0)
+    # target-user SER with no jammer, for the reference line
+    nojam = eval_ser_jam(m, 10.0, [-40.0], frames=500_000, mode="blind",
+                         target=0)[0]
+    write_csv(DATA / "sec_jam.csv",
+              ["jsr_db", "blind", "matched", "nojam"],
+              [(j, blind[i], matched[i], nojam) for i, j in enumerate(jsr)])
+    print(f"   target no-jam={nojam:.2e}")
+    print("   blind  :", [f"{v:.3f}" for v in blind])
+    print("   matched:", [f"{v:.3f}" for v in matched])
+
+
+def stage_D():
+    print("[D] mask families ...")
+    P, vu, d, U = 4, 16, 64, 4
+    Lp = d // P
+    fams = {}
+    # random fixed masks
+    set_seed(7); fams["random"] = random_mask(U, Lp)
+    # Walsh-Hadamard rows (orthogonal)
+    Hd = torch.tensor(hadamard(Lp)[:U], dtype=torch.float32)  # ||row||=sqrt(Lp)
+    fams["hadamard"] = Hd
+    rows = []
+    for name, W in fams.items():
+        m = get_model(P=P, vu=vu, d=d, U=U, iters=4000, freeze_W=W)
+        lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
+        ew = eve_wrong_mask(U, Lp, seed=20260813).to(DEVICE)
+        ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
+        xc = mean_abs_xcorr(m.masks().detach())
+        rows.append((name, lg, ev, xc))
+        print(f"   {name:9s} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f}")
+    # learned masks (plain cross entropy)
+    m = get_model(P=P, vu=vu, d=d, U=U, iters=4000)
+    lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
+    ew = eve_wrong_mask(U, Lp, seed=20260813).to(DEVICE)
+    ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
+    xc = mean_abs_xcorr(m.masks().detach())
+    rows.append(("learned", lg, ev, xc))
+    print(f"   {'learned':9s} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f}")
+    # regularized key learning (orthogonality + constant modulus)
+    mr = get_model_reg(P=P, vu=vu, d=d, U=U, iters=4000)
+    lgr = eval_ser_sse(mr, [10.0], frames=500_000)[0]
+    evr = eval_ser_eve(mr, ew, [10.0], frames=500_000)[0]
+    xcr = mean_abs_xcorr(mr.masks().detach())
+    rows.append(("learned_reg", lgr, evr, xcr))
+    print(f"   {'learn_reg':9s} legit={lgr:.2e} eve={evr:.3f} xcorr={xcr:.4f}")
+    # jamming robustness of plain vs regularized keys (blind jammer)
+    jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+    jb_plain = eval_ser_jam(m, 10.0, jsr, frames=300_000, mode="blind")
+    jb_reg = eval_ser_jam(mr, 10.0, jsr, frames=300_000, mode="blind")
+    write_csv(DATA / "sec_regjam.csv",
+              ["jsr_db", "plain", "regularized"],
+              [(j, jb_plain[i], jb_reg[i]) for i, j in enumerate(jsr)])
+    write_csv(DATA / "sec_maskfam.csv",
+              ["family", "legit_ser", "eve_ser", "mask_xcorr"], rows)
+
+
+@torch.no_grad()
+def eval_scheme(model: SSE, snr_db, frames, *, rx_masks=None, perms=None,
+                jam_w=None, jsr_db=None, target=0, chunk=100_000, seed=777,
+                decode_user=0):
+    """Generic evaluator for the comparison schemes.
+    rx_masks: masks used at the decoding receiver (None = true masks).
+    perms:    (U,d-index) per-user secret permutations applied at tx to
+              x_u; the decoder for `decode_user` inverse-permutes first.
+              rx side without the permutation just decodes raw.
+    jam_w:    None or 'matched'/'blind' jammer aimed at `target`.
+    Returns SER of `decode_user` (frame error over its P digits)."""
+    model.eval().to(DEVICE)
+    Bn = model.unit_codebook()
+    true_m = model.masks()
+    c = model.c
+    sigma = snr_to_sigma2(snr_db, model.d).to(DEVICE).sqrt()
+    d = model.P * model.L
+    if perms is not None:
+        inv = torch.argsort(perms, dim=1)
+    if jam_w == "matched":
+        wf = (Bn[target][None, :] * true_m[target][None, :]).repeat(model.P, 1)
+        if perms is not None:
+            wfl = wf.reshape(-1)[perms[target]]
+            wf = wfl.reshape(model.P, model.L)
+        wf = wf / wf.norm()
+    jsr = 10.0 ** (jsr_db / 10.0) if jsr_db is not None else 0.0
+    g = torch.Generator(device="cpu").manual_seed(seed + int(10 * snr_db))
+    err = tot = 0
+    for n0 in range(0, frames, chunk):
+        n = min(chunk, frames - n0)
+        digits = torch.randint(model.vu, (n, model.users, model.P),
+                               generator=g).to(DEVICE)
+        e = Bn[digits] / math.sqrt(model.P)
+        x = e * true_m[None, :, None, :]                  # (n,U,P,L)
+        if perms is not None:
+            xf = x.reshape(n, model.users, d)
+            xf = torch.stack([xf[:, u][:, perms[u]] for u in range(model.users)], 1)
+            x = xf.reshape(n, model.users, model.P, model.L)
+        y = x.sum(dim=1) / c                              # (n,P,L)
+        h = rayleigh_gain((n,), device=DEVICE)            # decode_user channel
+        y_rx = h[:, None, None] * y                       # (n,P,L)
+        if jam_w is not None:
+            hJ = rayleigh_gain((n,), device=DEVICE)
+            if jam_w == "matched":
+                w = wf[None].expand(n, model.P, model.L)
+            else:
+                w = torch.randn(n, model.P, model.L, device=DEVICE)
+                w = w / w.reshape(n, -1).norm(dim=1)[:, None, None].clamp_min(1e-8)
+            y_rx = y_rx + (hJ * math.sqrt(jsr))[:, None, None] * w
+        y_rx = y_rx + sigma * torch.randn(n, model.P, model.L, device=DEVICE)
+        r = y_rx / h[:, None, None].clamp_min(1e-6)
+        if perms is not None:
+            rf = r.reshape(n, d)[:, inv[decode_user]]
+            r = rf.reshape(n, model.P, model.L)
+        m_rx = true_m if rx_masks is None else rx_masks.to(DEVICE)
+        cand = Bn * m_rx[decode_user][None, :]            # (Vu,L)
+        scores = torch.einsum("npl,vl->npv", r, cand)
+        wrong = (scores.argmax(-1) != digits[:, decode_user]).any(dim=1)
+        err += int(wrong.sum()); tot += n
+    return err / tot
+
+
+def stage_E():
+    """Comparison across five schemes at 10 dB, V=65,536, user-0 metrics.
+    Columns: legitimate SER; outsider-eavesdropper SER; insider SER (a
+    curious legitimate user of the SAME system decoding user 0 with its
+    own credentials); target-user SER under the strongest jammer the
+    attacker can BUILD from public knowledge at JSR 0 dB (matched if the
+    masks are public, blind if the PHY structure is secret)."""
+    print("[E] scheme comparison ...")
+    m = get_model(iters=4000)
+    F = 400_000
+    d = m.P * m.L
+    set_seed(20260813)
+    ew = eve_wrong_mask(m.users, m.L, seed=20260813)
+    # shuffling-style multi-user adaptation: one GLOBAL secret permutation
+    # shared by all users (per-user permutations break the trained
+    # multi-user separation, so the shared key is the fair extension)
+    gp = torch.Generator().manual_seed(11)
+    gperm = torch.randperm(d, generator=gp)
+    perms = gperm[None].repeat(m.users, 1)
+
+    chance = 1.0 - (1.0 / m.vu) ** m.P
+    insider_masks = torch.roll(m.masks().detach().cpu(), 1, 0)  # user 1's key
+
+    rows = []
+    # S1 proposed keyed masking: per-user secret masks
+    lg = eval_scheme(m, 10.0, F)
+    ev = eval_scheme(m, 10.0, F, rx_masks=ew)
+    ins = eval_scheme(m, 10.0, F, rx_masks=insider_masks)
+    jm = eval_scheme(m, 10.0, F, jam_w="blind", jsr_db=0.0)
+    rows.append(("proposed", lg, ev, ins, jm))
+    # S2 public-mask superposition (no key): everyone decodes, attacker
+    # builds the matched jammer
+    jm2 = eval_scheme(m, 10.0, F, jam_w="matched", jsr_db=0.0)
+    rows.append(("public_mask", lg, lg, lg, jm2))
+    # S3 global permutation key over public masks (shuffling-style): the
+    # outsider lacks the permutation, but every insider holds it and the
+    # masks are public, so insiders decode each other
+    lg3 = eval_scheme(m, 10.0, F, perms=perms)
+    ev3 = eval_scheme_permuted_eve(m, 10.0, F, perms)
+    jm3 = eval_scheme(m, 10.0, F, perms=perms, jam_w="blind", jsr_db=0.0)
+    rows.append(("perm_key", lg3, ev3, lg3, jm3))
+    # S4 per-user index cipher (one-time pad on the digits) over public
+    # masks: content protected from outsiders and insiders, but the PHY
+    # is public so the matched jammer remains buildable
+    rows.append(("index_cipher", lg, chance, chance, jm2))
+    # S5 OMA digital, no encryption: open to everyone
+    from sse_lib import oma_ser
+    lg5 = oma_ser([10.0], bits=int(math.log2(m.V)))[0]
+    rows.append(("oma_plain", lg5, lg5, lg5, float("nan")))
+
+    write_csv(DATA / "sec_compare.csv",
+              ["scheme", "legit_ser", "eve_out", "eve_in", "jam0_ser"], rows)
+    for r in rows:
+        print("   ", r)
+
+
+@torch.no_grad()
+def eval_scheme_permuted_eve(model: SSE, snr_db, frames, perms,
+                             chunk=100_000, seed=777):
+    """Eve for S3: sees the per-user permuted tx, holds the PUBLIC masks
+    but not the permutation, decodes user 0 raw."""
+    model.eval().to(DEVICE)
+    Bn = model.unit_codebook()
+    true_m = model.masks()
+    c = model.c
+    d = model.P * model.L
+    sigma = snr_to_sigma2(snr_db, model.d).to(DEVICE).sqrt()
+    g = torch.Generator(device="cpu").manual_seed(seed + int(10 * snr_db))
+    err = tot = 0
+    for n0 in range(0, frames, chunk):
+        n = min(chunk, frames - n0)
+        digits = torch.randint(model.vu, (n, model.users, model.P),
+                               generator=g).to(DEVICE)
+        e = Bn[digits] / math.sqrt(model.P)
+        x = e * true_m[None, :, None, :]
+        xf = x.reshape(n, model.users, d)
+        xf = torch.stack([xf[:, u][:, perms[u]] for u in range(model.users)], 1)
+        y = xf.reshape(n, model.users, model.P, model.L).sum(dim=1) / c
+        h = rayleigh_gain((n,), device=DEVICE)
+        y_rx = h[:, None, None] * y + sigma * torch.randn(
+            n, model.P, model.L, device=DEVICE)
+        r = y_rx / h[:, None, None].clamp_min(1e-6)
+        cand = Bn * true_m[0][None, :]
+        scores = torch.einsum("npl,vl->npv", r, cand)
+        wrong = (scores.argmax(-1) != digits[:, 0]).any(dim=1)
+        err += int(wrong.sum()); tot += n
+    return err / tot
+
+
+def correlated_masks(true_m: torch.Tensor, rho: float, gen: torch.Generator):
+    """Substitute masks with prescribed normalized correlation rho to the
+    true keys: mtil = rho*m + sqrt(1-rho^2)*m_perp, ||mtil|| = ||m||."""
+    U, Lp = true_m.shape
+    out = torch.empty_like(true_m)
+    for u in range(U):
+        m = true_m[u]
+        p = torch.randn(Lp, generator=gen)
+        p = p - (p @ m) / (m @ m) * m
+        p = p / p.norm() * m.norm()
+        out[u] = rho * m + math.sqrt(max(0.0, 1 - rho * rho)) * p
+    return out
+
+
+def stage_F():
+    """Attack difficulty in the style of standard security evaluations.
+    (i) Key sensitivity: Eve SER against the correlation rho between her
+        guess and the true key (avalanche-style curve).
+    (ii) Brute-force key search: expected Eve SER against the number of
+        random key guesses K, where for each trial the attacker keeps the
+        guess with the LARGEST correlation to the true key (a genie-aided
+        upper bound on any selection rule). The best-guess correlation
+        rho_max(K, L) is sampled by Monte Carlo and mapped through the
+        measured sensitivity curve of (i)."""
+    print("[F] attack difficulty ...")
+    m = get_model(iters=4000)
+    F = 200_000
+    true_m = m.masks().detach().cpu()
+    gen = torch.Generator().manual_seed(31)
+
+    # (i) sensitivity curve, densest where the curve falls steeply
+    rhos = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.65, 0.7, 0.75,
+            0.8, 0.84, 0.88, 0.90, 0.92, 0.94, 0.96, 0.97, 0.98,
+            0.99, 0.995, 1.0]
+    sens = []
+    for rho in rhos:
+        mt = correlated_masks(true_m, rho, gen)
+        ser = eval_ser_eve(m, mt, [10.0], frames=F)[0]
+        sens.append((rho, ser))
+        print(f"   rho={rho:.2f} eve_ser={ser:.4f}")
+    write_csv(DATA / "sec_sens.csv", ["rho", "eve_ser"], sens)
+
+    # (ii) brute-force: sample rho_max(K, L) and interpolate SER(rho)
+    import numpy as np
+    r_arr = np.array([r for r, _ in sens])
+    s_arr = np.array([s for _, s in sens])
+
+    def ser_of_rho(r):
+        return float(np.interp(abs(r), r_arr, s_arr))
+
+    ks = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000]
+    rows = []
+    rng = np.random.default_rng(2026)
+    for Lp in [8, 16, 32, 64]:
+        for K in ks:
+            trials = 400
+            # rho of a random unit guess vs a fixed key in R^L is the
+            # first coordinate of a random unit vector; sample K per trial
+            best = np.empty(trials)
+            for t in range(trials):
+                g = rng.standard_normal((K, Lp))
+                g /= np.linalg.norm(g, axis=1, keepdims=True)
+                best[t] = np.abs(g[:, 0]).max()
+            ser_est = float(np.mean([ser_of_rho(b) for b in best]))
+            rows.append((Lp, K, float(best.mean()), ser_est))
+        print(f"   L={Lp} done")
+    write_csv(DATA / "sec_brute.csv",
+              ["L", "K", "best_rho", "eve_ser"], rows)
+
+
+def main():
+    print(f"device={DEVICE}")
+    stage_A()
+    stage_B()
+    stage_C()
+    stage_D()
+    stage_E()
+    stage_F()
+    print("[done] full-scale security CSVs in", DATA)
+
+
+if __name__ == "__main__":
+    main()
