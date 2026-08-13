@@ -3,12 +3,16 @@ from ../data/*.csv and writes paper-ready PDFs to ../fig/. No experiment
 is rerun. All result plots share one canvas and axes rectangle (8:6 box).
 Label dictionary is fixed here and copied verbatim into tables and prose.
 
-  fig_sec_snr.pdf     : legitimate vs eavesdropper SER vs SNR (Fig. 2)
+  fig_sec_snr.pdf     : legitimate and outsider SER vs SNR (Fig. 2)
   fig_sec_keylen.pdf  : SER vs key length L (Fig. 3)
-  fig_sec_jam.pdf     : target-user SER vs JSR (Fig. 4)
-  fig_sec_sens.pdf    : Eve SER vs key correlation (Fig. 5)
-  fig_sec_brute.pdf     : Eve SER vs number of key guesses (Fig. 6)
-  fig_sec_brute_rho.pdf : best key correlation vs guesses (Fig. 7)
+  fig_sec_jam.pdf     : target-user SER vs JSR, four schemes (Fig. 4)
+  fig_sec_sens.pdf    : outsider SER vs fraction of key held (Fig. 5)
+  fig_sec_brute.pdf   : outsider SER vs number of key guesses (Fig. 6)
+  fig_sec_kpa.pdf     : outsider SER vs known-plaintext frames (Fig. 7)
+  fig_sec_real.pdf    : token error rate on real streams (Fig. 8)
+
+fig_sec_brute_rho.pdf is also emitted as a diagnostic and is not used in
+the paper.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -138,19 +142,26 @@ def fig_keylen():
 
 
 def fig_jam():
-    # the target-user SER spans 0.3 to 1.0, less than one decade, so a
-    # linear axis is used: a log axis here produces wide minor tick
-    # labels (6x10^-1) that crowd out the y label under the fixed
-    # axes rectangle
-    r = load("sec_jam.csv")
+    """Target-user SER against JSR for four schemes. A linear axis is
+    used because the range spans less than one decade, where a log axis
+    would print wide minor tick labels that crowd out the y label."""
+    r = load("sec_jam_cmp.csv")
     x = col(r, "jsr_db")
     fig, ax = plt.subplots()
+    ax.plot(x, col(r, "oma_targeted"), color=C_PUB, marker="^", ls=":",
+            label="OMA, targeted")
     ax.plot(x, col(r, "matched"), color=C_MATCH, marker="P", ls="--",
-            label=LBL["jam_m"])
-    ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-",
-            label=LBL["jam_b"])
-    nojam = col(r, "nojam")[0]
-    ax.axhline(nojam, color=C_OMA, ls=":", lw=0.9, label=LBL["nojam"])
+            label="Public masks, matched")
+    # the two blind curves agree to 0.0015, so the proposed one is drawn
+    # first and wide and the permutation key rides on top with open
+    # markers, otherwise one legend entry would have no visible curve
+    ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-", lw=2.6,
+            ms=7, alpha=0.85, label="Proposed, blind")
+    ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
+            lw=1.2, ms=4.5, mfc="none", label="Permutation key, blind")
+    nojam = float(load("sec_jam.csv")[0]["nojam"])
+    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9,
+               label=LBL["nojam"])
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))

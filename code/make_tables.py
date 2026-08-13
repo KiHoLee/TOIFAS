@@ -23,7 +23,7 @@ NAME = {
 }
 RECEIVER = {
     "legit": "Legitimate", "oma": "OMA",
-    "insider": "Insider", "eve": "Outsider eavesdropper",
+    "insider": "Insider", "eve": "Outsider",
 }
 
 
@@ -73,7 +73,30 @@ def real_table():
         print(f"{RECEIVER[key]} & {cells}" + r" \\")
 
 
+def refresh_tables():
+    print("% Table: key refresh (from refresh_summary.csv)")
+    for r in csv.DictReader(open(DATA / "refresh_summary.csv")):
+        b = r["scheme"] == "Invariant"
+        name = r"\textbf{Invariant}" if b else r["scheme"]
+        f = (lambda t: r"\mathbf{" + t + "}") if b else (lambda t: t)
+        print(f"{name} & ${f(format(float(r['legit']), '.3f'))}$ & "
+              f"${f(format(float(r['eve']), '.4f'))}$ & "
+              f"${f(format(float(r['entropy_bits']), '.1f'))}$~bits" + r" \\")
+    print()
+    print("% Table: known plaintext across a refresh (from refresh_kpa.csv)")
+    rows = {r["n_frames"]: r for r in csv.DictReader(open(DATA / "refresh_kpa.csv"))}
+    keep = ["2", "8", "64"]
+    print("Frames used by the attacker & "
+          + " & ".join(f"${k}$" for k in keep) + r" \\")
+    for lbl, key in (("Same block", "ser_same_block"),
+                     ("Next block", "ser_next_block")):
+        print(f"{lbl} & "
+              + " & ".join(f"${float(rows[k][key]):.3f}$" for k in keep)
+              + r" \\")
+
+
 if __name__ == "__main__":
     compare_table(); print()
     maskfam_table(); print()
-    real_table()
+    real_table(); print()
+    refresh_tables()

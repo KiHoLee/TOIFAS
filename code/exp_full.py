@@ -645,6 +645,68 @@ def csv_rows(path):
         yield from _csv.DictReader(f)
 
 
+def oma_ser_jammed(snr_db, jsr_db_list, bits=16, U=4, n_grid=4096):
+    """OMA under a jammer that concentrates on the victim's slots.
+
+    An OMA user occupies d/U exclusive real dimensions that are public,
+    so a jammer needs no key to put all of its power there. With unit
+    energy per real dimension and a total jammer energy of rho times the
+    frame energy, concentrating on d/U of the d dimensions gives a
+    per-dimension jammer variance of U*rho.
+
+    The jammer reaches the victim through its own Rayleigh channel, the
+    same convention eval_scheme uses for every simulated scheme, so the
+    victim sees an effective noise variance of 1/snr + U*rho*hJ**2 with
+    E[hJ**2]=1. Averaging over the independent signal and jammer gains
+    uses a product of exponential quantile grids.
+    """
+    q = (torch.arange(n_grid, dtype=torch.float64) + 0.5) / n_grid
+    h2 = -torch.log1p(-q)                      # |h|^2 ~ Exp(1)
+    hj2 = h2.clone()                           # |hJ|^2 ~ Exp(1), independent
+    h = h2.sqrt()[:, None]                     # (n,1) signal amplitude
+    snr = 10.0 ** (snr_db / 10.0)
+    out = []
+    for jsr_db in jsr_db_list:
+        rho = 10.0 ** (jsr_db / 10.0)
+        var = (1.0 / snr + U * rho * hj2)[None, :]        # (1,n)
+        arg = (h / var.sqrt()).clamp(0, 38)
+        pe = 0.5 * torch.erfc(arg / math.sqrt(2.0))       # per-bit error
+        out.append(float((1.0 - (1.0 - pe) ** bits).mean()))
+    return out
+
+
+def stage_L():
+    """Jamming comparison across schemes at 10 dB.
+
+    proposed blind   : the strongest jammer the proposed scheme admits
+                       while the key stays secret
+    public matched   : the jammer a public-mask scheme always faces
+    permutation blind: the shuffling-style scheme, whose secret
+                       permutation also denies the jammer a target
+    OMA targeted     : the jammer an orthogonal scheme faces, since its
+                       slot assignment is public and needs no key
+    """
+    print("[L] jamming across schemes ...")
+    m = get_model(iters=4000)
+    F = 300_000
+    d = m.P * m.L
+    gp = torch.Generator().manual_seed(11)
+    perms = torch.randperm(d, generator=gp)[None].repeat(m.users, 1)
+    jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+    oma = oma_ser_jammed(10.0, jsr, bits=int(math.log2(m.V)), U=m.users)
+    rows = []
+    for i, j in enumerate(jsr):
+        blind = eval_scheme(m, 10.0, F, jam_w="blind", jsr_db=j)
+        matched = eval_scheme(m, 10.0, F, jam_w="matched", jsr_db=j)
+        perm = eval_scheme(m, 10.0, F, perms=perms, jam_w="blind", jsr_db=j)
+        rows.append((j, blind, matched, perm, oma[i]))
+        print(f"   JSR={j:6.1f} blind={blind:.4f} matched={matched:.4f} "
+              f"perm={perm:.4f} oma={oma[i]:.4f}")
+    write_csv(DATA / "sec_jam_cmp.csv",
+              ["jsr_db", "blind", "matched", "perm_blind", "oma_targeted"],
+              rows)
+
+
 def main():
     print(f"device={DEVICE}")
     stage_A()
@@ -655,6 +717,7 @@ def main():
     stage_F()
     stage_I()
     stage_J()
+    stage_L()
     print("[done] full-scale security CSVs in", DATA)
 
 

@@ -109,6 +109,11 @@ def main():
     B0 = m.B.detach().clone().cpu()
     ew = eve_wrong_mask(U, Lp, seed=20260813)
 
+    # the no-refresh reference: the trained keys, held for every block
+    install(m, K0, B0)
+    lg_fixed = eval_ser_sse(m, [10.0], frames=FRAMES)[0]
+    ev_fixed = eval_ser_eve(m, ew, [10.0], frames=FRAMES)[0]
+
     rows = []
     for t in range(BLOCKS):
         signs, colperm, userperm = kdf_invariant(SEED, t, U, Lp)
@@ -117,18 +122,32 @@ def main():
         ev = eval_ser_eve(m, ew, [10.0], frames=FRAMES)[0]
         install(m, kdf_naive(SEED, t, U, Lp), B0)
         lg_naive = eval_ser_sse(m, [10.0], frames=FRAMES)[0]
-        rows.append((t, lg, lg_naive, ev))
+        ev_naive = eval_ser_eve(m, ew, [10.0], frames=FRAMES)[0]
+        rows.append((t, lg, lg_naive, ev, ev_naive))
         if t < 3 or t == BLOCKS - 1:
             print(f"   block {t:3d} invariant={lg:.4f} naive={lg_naive:.4f} "
                   f"eve={ev:.4f}")
     write_csv(DATA / "refresh.csv",
-              ["block", "legit_invariant", "legit_naive", "eve_ser"], rows)
+              ["block", "legit_invariant", "legit_naive", "eve_invariant",
+               "eve_naive"], rows)
     inv = [r[1] for r in rows]; nai = [r[2] for r in rows]
-    ev = [r[3] for r in rows]
+    ev = [r[3] for r in rows]; evn = [r[4] for r in rows]
     print(f"   invariant refresh: mean={np.mean(inv):.4f} "
           f"min={min(inv):.4f} max={max(inv):.4f}")
     print(f"   naive refresh    : mean={np.mean(nai):.4f}")
-    print(f"   eavesdropper     : mean={np.mean(ev):.5f}")
+    print(f"   eavesdropper     : mean={np.mean(ev):.5f} "
+          f"min={min(ev):.5f} max={max(ev):.5f}")
+
+    # the three rows of the refresh table, so no cell is hand-typed. Both
+    # fixed and naive draw U of the L-1 non-constant Hadamard rows.
+    fam = math.lgamma(Lp) / math.log(2.0) - math.lgamma(Lp - U) / math.log(2.0)
+    write_csv(DATA / "refresh_summary.csv",
+              ["scheme", "legit", "eve", "entropy_bits"],
+              [("None (fixed key)", lg_fixed, ev_fixed, fam),
+               ("Fresh orthogonal keys", float(np.mean(nai)),
+                float(np.mean(evn)), fam),
+               ("Invariant", float(np.mean(inv)), float(np.mean(ev)),
+                entropy_bits(U, Lp))])
 
     print("[K] known plaintext across a refresh ...")
     kpa_rows = []
