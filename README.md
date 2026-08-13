@@ -86,7 +86,8 @@ seed. `exp_refresh.py` implements that layer and shows why it has to
 draw from the transformations that leave the decision statistic
 invariant: a refresh that installs fresh orthogonal keys instead costs
 the legitimate users a factor of nearly three, while the invariant
-refresh is free and raises the per-block key to 64.8 bits.
+refresh costs nothing and raises the per-block key from 15.0 to 64.8
+bits.
 
 ## License
 
