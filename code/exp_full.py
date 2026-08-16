@@ -152,7 +152,7 @@ def get_model(P=4, vu=16, d=64, U=4, iters=4000, seed=1, freeze_W=None, tag=""):
 def stage_A():
     print("[A] security vs SNR (V=65536) ...")
     m = get_model(iters=4000)
-    snr = [0.0, 4.0, 8.0, 12.0, 16.0, 20.0]
+    snr = [float(v) for v in range(0, 21, 2)]
     frames = 800_000
     legit = eval_ser_sse(m, snr, frames=frames)
     ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
@@ -209,18 +209,46 @@ def get_model_reg(P=4, vu=16, d=64, U=4, iters=4000, seed=1):
     return m
 
 
+def oma_ser_keylen(L, snr_db, bits=16, n_grid=200_000):
+    """Resource-matched OMA reference for the key-length sweep.
+
+    The OMA user owns d/U = L exclusive real dimensions for its 16 index
+    bits at the same per-dimension SNR. For L >= 16 the best use of the
+    allocation is antipodal signaling on 16 dimensions with the frame
+    energy concentrated on them, an energy gain of L/16 per bit. For
+    L < 16 the user must pack 16/L bits per dimension, a 2^(16/L)-ary
+    pulse-amplitude constellation, defined when 16/L is an integer and
+    reported as nan otherwise.
+    """
+    import numpy as np
+    if L >= bits:
+        return oma_ser([snr_db + 10.0 * math.log10(L / bits)], bits=bits)[0]
+    if bits % L:
+        return float("nan")
+    M = 2 ** (bits // L)
+    x = (np.arange(n_grid) + 0.5) / n_grid
+    h = np.sqrt(-np.log(1.0 - x))
+    g = 10.0 ** (snr_db / 10.0)
+    arg = np.clip(h * math.sqrt(6.0 * g / (M * M - 1.0)), 0, 38)
+    q = (1.0 - 1.0 / M) * np.array([math.erfc(v / math.sqrt(2.0))
+                                    for v in arg])
+    q = np.clip(q, 0.0, 1.0)
+    return float(np.mean(1.0 - (1.0 - q) ** L))
+
+
 def stage_B():
     print("[B] key length (dense grid so the curve is smooth) ...")
-    oma10 = oma_ser([10.0], bits=16)[0]
     rows = []
-    for d in [16, 24, 32, 48, 64, 96, 128, 192, 256]:
+    for d in [16, 24, 32, 40, 48, 56, 64, 80, 96, 128, 192, 256]:
         m = get_model(d=d, iters=4000)
         lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
         ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
         ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
         xc = mean_abs_xcorr(m.masks().detach())
-        rows.append((m.L, d, lg, ev, xc, oma10))
-        print(f"   L={m.L:4d} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f}")
+        oma = oma_ser_keylen(m.L, 10.0)
+        rows.append((m.L, d, lg, ev, xc, oma))
+        print(f"   L={m.L:4d} legit={lg:.2e} eve={ev:.3f} xcorr={xc:.4f} "
+              f"oma={oma:.4f}")
     write_csv(DATA / "sec_keylen.csv",
               ["L", "d", "legit_ser", "eve_ser", "mask_xcorr", "oma"], rows)
 
@@ -548,8 +576,10 @@ def stage_I():
     between the guessed and the true mask. For the permutation scheme it
     is the fraction of positions the guessed permutation places
     correctly. For the index cipher it is the fraction of pad bits the
-    attacker knows, whose error rate is the closed form
-    1 - 2^{-(1-f) log2 V} because the unknown bits are uniform.
+    attacker knows. Its error rate is the closed form
+    1 - (1-p_ch) 2^{-(1-f) log2 V}, the probability of decoding the
+    ciphered index over the channel times the probability that the
+    unknown pad bits, which stay uniform, are all guessed right.
     """
     print("[I] key sensitivity across schemes ...")
     m = get_model(iters=4000)
@@ -563,8 +593,12 @@ def stage_I():
     perms = gperm[None].repeat(m.users, 1)
     # a marker grid comparable to the other result figures, with the
     # spacing tightened only where the curves fall
-    fracs = [0.0, 0.2, 0.4, 0.6, 0.75, 0.85, 0.9, 0.94, 0.97, 1.0]
+    fracs = [0.0, 0.2, 0.4, 0.6, 0.75, 0.85, 0.9, 0.92, 0.94, 0.955,
+             0.97, 0.985, 1.0]
     bits = math.log2(m.V)
+    # the channel success of a public-mask receiver, which the cipher
+    # cannot exceed even with the full pad
+    lg1 = eval_scheme(m, 10.0, 200_000)
     rows = []
     for f in fracs:
         acc_m = []
@@ -585,7 +619,7 @@ def stage_I():
                                                 perms, eve_perms=pperms,
                                                 seed=777 + 13 * t))
         ser_perm = sum(acc) / len(acc)
-        ser_pad = 1.0 - 2.0 ** (-(1.0 - f) * bits)
+        ser_pad = 1.0 - (1.0 - lg1) * 2.0 ** (-(1.0 - f) * bits)
         rows.append((f, ser_mask, ser_perm, ser_pad))
         print(f"   f={f:.3f} mask={ser_mask:.4f} perm={ser_perm:.4f} "
               f"pad={ser_pad:.4f}")
@@ -602,7 +636,8 @@ def stage_J():
     one that places the most positions correctly, map the resulting
     fraction through the same sensitivity curve.
     Index cipher: K random pads out of the 2^{log2 V} possible pads, so
-    the attacker succeeds with probability K/V on each symbol.
+    the attacker holds the right pad with probability K/V and still has
+    to decode the ciphered index over the channel.
     """
     print("[J] brute-force search across schemes ...")
     import numpy as np
@@ -612,7 +647,11 @@ def stage_J():
     perm_arr = np.array([float(r["ser_perm"]) for r in cmp_rows])
 
     d, L, V = 64, 16, 65536
-    ks = [1, 10, 100, 1_000, 10_000, 100_000, 1_000_000]
+    # channel floor of the cipher receiver, read from the stage-I curve
+    # at a fully known pad so both figures share one source
+    lg1 = 1.0 - (1.0 - float(cmp_rows[-1]["ser_pad"]))
+    ks = [1, 3, 10, 30, 100, 300, 1_000, 3_000, 10_000, 30_000, 65_536,
+          100_000, 300_000, 1_000_000]
     rng = np.random.default_rng(2026)
     trials = 400
     rows = []
@@ -629,7 +668,7 @@ def stage_J():
             best_frac[t] = rng.binomial(d, 1.0 / d, size=K).max() / d
         ser_mask = float(np.mean(np.interp(best_kappa, f_arr, mask_arr)))
         ser_perm = float(np.mean(np.interp(best_frac, f_arr, perm_arr)))
-        ser_pad = 1.0 - min(1.0, K / V)
+        ser_pad = 1.0 - min(1.0, K / V) * (1.0 - lg1)
         rows.append((K, ser_mask, ser_perm, ser_pad,
                      float(best_kappa.mean()), float(best_frac.mean())))
         print(f"   K={K:8d} mask={ser_mask:.4f} perm={ser_perm:.4f} "
@@ -692,7 +731,7 @@ def stage_L():
     d = m.P * m.L
     gp = torch.Generator().manual_seed(11)
     perms = torch.randperm(d, generator=gp)[None].repeat(m.users, 1)
-    jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+    jsr = [float(v) for v in range(-10, 21, 2)]
     oma = oma_ser_jammed(10.0, jsr, bits=int(math.log2(m.V)), U=m.users)
     rows = []
     for i, j in enumerate(jsr):
@@ -705,6 +744,31 @@ def stage_L():
     write_csv(DATA / "sec_jam_cmp.csv",
               ["jsr_db", "blind", "matched", "perm_blind", "oma_targeted"],
               rows)
+    stage_L_gap(rows)
+
+
+def stage_L_gap(rows):
+    """Store the blind-vs-matched power gap as a raw artifact.
+
+    For every error level both curves reach, the gap is the extra JSR the
+    blind jammer needs to inflict it. Both curves are interpolated on the
+    dense grid, so the quoted range comes from a stored file rather than
+    from a hand interpolation.
+    """
+    import numpy as np
+    j = np.array([r[0] for r in rows])
+    blind = np.array([r[1] for r in rows])
+    matched = np.array([r[2] for r in rows])
+    lo = max(blind.min(), matched.min())
+    hi = min(blind.max(), matched.max())
+    ser = np.linspace(lo, hi, 200)
+    jb = np.interp(ser, blind, j)
+    jm = np.interp(ser, matched, j)
+    gap = jb - jm
+    write_csv(DATA / "sec_jam_gap.csv", ["ser", "gap_db"],
+              list(zip(ser.tolist(), gap.tolist())))
+    print(f"   gap: {gap.min():.2f} to {gap.max():.2f} dB "
+          f"over SER {lo:.3f} to {hi:.3f}")
 
 
 def main():

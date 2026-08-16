@@ -166,7 +166,7 @@ def main():
     print("[Q1] Eve no-mask   SER:", [f"{v:.3g}" for v in eve_n])
     print(f"[Q1] chance frame SER = {chance_frame:.4f}")
 
-    write_csv(DATA / "feas_q1_eavesdrop.csv",
+    write_csv(DATA / "pilot" / "feas_q1_eavesdrop.csv",
               ["snr_db", "legit", "eve_wrong", "eve_none", "eve_avg", "chance"],
               [(s, legit[i], eve_w[i], eve_n[i], eve_a[i], chance_frame)
                for i, s in enumerate(snr_eval)])
@@ -187,7 +187,7 @@ def main():
         xc = mean_abs_cross_corr(mdl.masks().detach().cpu())
         q2_rows.append((mdl.L, d, lg, ev, xc))
         print(f"   L={mdl.L:4d}  legit={lg:.3g}  eve={ev:.3g}  |xcorr|={xc:.3f}")
-    write_csv(DATA / "feas_q2_keyentropy.csv",
+    write_csv(DATA / "pilot" / "feas_q2_keyentropy.csv",
               ["L", "d", "legit_ser", "eve_ser", "mask_xcorr"], q2_rows)
 
     # Q3: jamming robustness at SNR=10 dB
@@ -197,7 +197,7 @@ def main():
     jam_rd = eval_ser_jam(model, 10.0, jsr, frames=300_000, mode="random")
     print("[Q3] aligned-jammer SER:", [f"{v:.3g}" for v in jam_al])
     print("[Q3] random-jammer  SER:", [f"{v:.3g}" for v in jam_rd])
-    write_csv(DATA / "feas_q3_jamming.csv",
+    write_csv(DATA / "pilot" / "feas_q3_jamming.csv",
               ["jsr_db", "ser_aligned", "ser_random"],
               [(j, jam_al[i], jam_rd[i]) for i, j in enumerate(jsr)])
 

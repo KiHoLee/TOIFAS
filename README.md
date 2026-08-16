@@ -28,8 +28,10 @@ code/
                         schemes, key families, scheme comparison, attack difficulty
   exp_kpa.py            stage H: known-plaintext attack on the key
   exp_refresh.py        stage K: the key-refresh layer, invariance group
+  exp_permkpa.py        permutation-key known-plaintext attack (Fig. 7)
+  check_cov_*.py        ciphertext-only covariance-attack checks (referee M1)
   exp_real_sec.py       stage G: real BERT WordPiece token streams
-  verify_math.py        closed-form checks V1-V5 against Monte Carlo, PASS/FAIL
+  verify_math.py        closed-form checks V1-V5, PASS/FAIL and verify_math.csv
   replot_security.py    every result figure, from data/ to fig/
   make_tables.py        LaTeX rows of every result table, from data/
   feasibility_security.py   early CPU-sized study, kept for the record
@@ -66,10 +68,10 @@ files.
 |---|---|---|
 | Fig. 2 SER against SNR | `exp_full.stage_A` | `sec_snr.csv` |
 | Fig. 3 key length | `exp_full.stage_B` | `sec_keylen.csv` |
-| Fig. 4 jamming | `exp_full.stage_L` | `sec_jam_cmp.csv`, `sec_jam.csv` |
+| Fig. 4 jamming (4 schemes) | `exp_full.stage_L` | `sec_jam_cmp.csv`, `sec_jam.csv` |
 | Fig. 5 key sensitivity | `exp_full.stage_I` | `sec_sens_cmp.csv` |
 | Fig. 6 brute-force search | `exp_full.stage_J` | `sec_brute_cmp.csv`, `sec_brute.csv` |
-| Fig. 7 known-plaintext attack | `exp_kpa` | `kpa.csv` |
+| Fig. 7 known-plaintext attack | `exp_kpa`, `exp_permkpa` | `kpa.csv`, `pkpa.csv` |
 | Fig. 8 real token streams | `exp_real_sec` | `real_sec_ter.csv` |
 | Scheme comparison table | `exp_full.stage_E` | `sec_compare.csv` |
 | Key family table | `exp_full.stage_D` | `sec_maskfam.csv`, `sec_regjam.csv` |

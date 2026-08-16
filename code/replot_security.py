@@ -3,20 +3,22 @@ from ../data/*.csv and writes paper-ready PDFs to ../fig/. No experiment
 is rerun. All result plots share one canvas and axes rectangle (8:6 box).
 Label dictionary is fixed here and copied verbatim into tables and prose.
 
-  fig_sec_snr.pdf     : legitimate and outsider SER vs SNR (Fig. 2)
+  fig_sec_snr.pdf     : legitimate and eavesdropper SER vs SNR (Fig. 2)
   fig_sec_keylen.pdf  : SER vs key length L (Fig. 3)
   fig_sec_jam.pdf     : target-user SER vs JSR, four schemes (Fig. 4)
-  fig_sec_sens.pdf    : outsider SER vs fraction of key held (Fig. 5)
-  fig_sec_brute.pdf   : outsider SER vs number of key guesses (Fig. 6)
-  fig_sec_kpa.pdf     : outsider SER vs known-plaintext frames (Fig. 7)
+  fig_sec_sens.pdf    : eavesdropper SER vs fraction of key held (Fig. 5)
+  fig_sec_brute.pdf   : eavesdropper SER vs number of key guesses (Fig. 6)
+  fig_sec_kpa.pdf     : eavesdropper SER vs known-plaintext frames (Fig. 7)
   fig_sec_real.pdf    : token error rate on real streams (Fig. 8)
 
-fig_sec_brute_rho.pdf is also emitted as a diagnostic and is not used in
-the paper.
+Curves that coincide by construction are drawn deliberately layered, the
+lower one wide and semi-transparent and the upper one narrow with open
+markers, so every legend entry has a visible curve.
 """
 from __future__ import annotations
 from pathlib import Path
 import csv
+import math
 
 import matplotlib
 matplotlib.use("Agg")
@@ -32,7 +34,7 @@ plt.rcParams.update({
     "font.serif": ["DejaVu Serif", "Times New Roman"],
     "font.size": 9,
     "axes.labelsize": 9,
-    "legend.fontsize": 6.6,
+    "legend.fontsize": 7.4,
     "xtick.labelsize": 8,
     "ytick.labelsize": 8,
     "axes.grid": True,
@@ -57,13 +59,20 @@ C_PUB = "#16a085"
 LBL = {
     "legit": "Legitimate",
     "oma": "OMA",
-    "eve_pub": "Eve, public masks",
-    "eve_key": "Eve, wrong key",
+    "eve_pub": "Eavesdropper, public masks",
+    "eve_key": "Eavesdropper, wrong key",
     "chance": "Random guess",
-    "jam_m": "Matched jammer (public masks)",
-    "jam_b": "Blind jammer (proposed)",
     "nojam": "No jammer",
+    "mask": "Keyed masking",
+    "perm": "Permutation key",
+    "pad": "Index cipher",
+    "insider": "Insider",
+    "outsider": "Outsider",
 }
+# deliberate-layering style for the LOWER of two coinciding curves
+UNDER = dict(lw=2.6, ms=7, alpha=0.85)
+# and for the curve riding on top of it
+OVER = dict(lw=1.2, ms=4.5, mfc="none")
 
 
 def load(name):
@@ -106,10 +115,11 @@ def fig_snr():
     r = load("sec_snr.csv")
     x = col(r, "snr_db")
     fig, ax = plt.subplots()
+    # legitimate and OMA coincide by construction; layered deliberately
     ax.semilogy(x, col(r, "legit"), color=C_LEGIT, marker="o", ls="-",
-                label=LBL["legit"])
+                label=LBL["legit"], **UNDER)
     ax.semilogy(x, col(r, "oma"), color=C_OMA, marker="^", ls=":",
-                label=LBL["oma"])
+                label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "eve_public"), color=C_PUB, marker="v",
                 ls="none", markersize=5.2, markerfacecolor="none",
                 label=LBL["eve_pub"])
@@ -125,13 +135,17 @@ def fig_snr():
 
 
 def fig_keylen():
+    """The OMA reference is the resource-matched one of oma_ser_keylen,
+    which is undefined at key lengths where 16/L is not an integer; those
+    rows carry nan and are skipped."""
     r = load("sec_keylen.csv")
     x = col(r, "L", int)
     fig, ax = plt.subplots()
     ax.semilogy(x, col(r, "legit_ser"), color=C_LEGIT, marker="o", ls="-",
                 label=LBL["legit"])
-    ax.semilogy(x, col(r, "oma"), color=C_OMA, marker="^", ls=":",
-                label=LBL["oma"])
+    op = [(l, v) for l, v in zip(x, col(r, "oma")) if not math.isnan(v)]
+    ax.semilogy([p[0] for p in op], [p[1] for p in op], color=C_OMA,
+                marker="^", ls=":", label=LBL["oma"])
     ax.semilogy(x, col(r, "eve_ser"), color=C_EVE, marker="s", ls="--",
                 label=LBL["eve_key"])
     ax.set_xlabel("Key length $L$")
@@ -144,47 +158,47 @@ def fig_keylen():
 def fig_jam():
     """Target-user SER against JSR for four schemes. A linear axis is
     used because the range spans less than one decade, where a log axis
-    would print wide minor tick labels that crowd out the y label."""
+    would print wide minor tick labels that crowd out the y label. The
+    no-jammer reference is annotated on the line rather than listed in
+    the legend, so the legend never covers it."""
     r = load("sec_jam_cmp.csv")
     x = col(r, "jsr_db")
+    me = max(1, len(x) // 8)
     fig, ax = plt.subplots()
-    ax.plot(x, col(r, "oma_targeted"), color=C_PUB, marker="^", ls=":",
-            label="OMA, targeted")
     ax.plot(x, col(r, "matched"), color=C_MATCH, marker="P", ls="--",
-            label="Public masks, matched")
-    # the two blind curves agree to 0.0015, so the proposed one is drawn
-    # first and wide and the permutation key rides on top with open
-    # markers, otherwise one legend entry would have no visible curve
-    ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-", lw=2.6,
-            ms=7, alpha=0.85, label="Proposed, blind")
+            markevery=me, label=LBL["mask"] + ", matched")
+    ax.plot(x, col(r, "oma_targeted"), color=C_PUB, marker="^", ls=":",
+            markevery=me, label=LBL["oma"] + ", targeted")
+    # the two blind curves agree to 0.0015; deliberate layering
+    ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-",
+            markevery=me, label=LBL["mask"] + ", blind", **UNDER)
     ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
-            lw=1.2, ms=4.5, mfc="none", label="Permutation key, blind")
+            markevery=me, label=LBL["perm"] + ", blind", **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
-    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9,
-               label=LBL["nojam"])
+    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9)
+    ax.text(max(x) - 0.6, nojam + 0.02, LBL["nojam"], ha="right",
+            va="bottom", fontsize=7.4, color="#555555")
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
     ax.set_ylim(0.2, 1.02)
-    ax.legend(loc="lower right")
+    ax.legend(loc="center right", bbox_to_anchor=(0.985, 0.47))
     save(fig, "fig_sec_jam")
 
 
 def fig_sens():
     """Key sensitivity of three schemes on one axis, the fraction of the
-    key the attacker holds. For keyed masking that fraction is the mask
-    correlation, for the permutation scheme the fraction of positions
-    placed correctly, for the index cipher the fraction of pad bits
-    known."""
+    key the attacker holds. All three ride the random-guess level over
+    most of the range, so the flat region is deliberately layered."""
     r = load("sec_sens_cmp.csv")
     x = col(r, "frac")
     fig, ax = plt.subplots()
     ax.plot(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
-            label="Keyed masking")
+            label=LBL["mask"], **UNDER)
     ax.plot(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
-            label="Permutation key")
+            label=LBL["perm"], **OVER)
     ax.plot(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
-            label="Index cipher")
+            lw=1.2, ms=4.5, mfc="none", label=LBL["pad"])
     chance = 1.0 - (1.0 / 16.0) ** 4
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
     ax.set_xlabel("Fraction of the key recovered")
@@ -200,54 +214,35 @@ def fig_brute():
     r = load("sec_brute_cmp.csv")
     x = col(r, "K")
     fig, ax = plt.subplots()
-    ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
-                label="Keyed masking")
     ax.semilogx(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
-                label="Permutation key")
+                label=LBL["perm"], **UNDER)
     ax.semilogx(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
-                label="Index cipher")
+                label=LBL["pad"], **OVER)
+    ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
+                label=LBL["mask"])
     kl = load("sec_keylen.csv")
     legit = float([q for q in kl if int(q["L"]) == 16][0]["legit_ser"])
     ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
     ax.set_xlabel("Number of key guesses $K$")
     ax.set_ylabel("Eavesdropper SER")
-    ax.set_ylim(-0.03, 1.05)
-    ax.legend(loc="center left")
+    ax.set_ylim(0.2, 1.05)
+    ax.legend(loc="lower left")
     save(fig, "fig_sec_brute")
-
-
-def fig_brute_rho():
-    """Best key correlation a search of size K reaches, per key length.
-    This is a property of the key space alone."""
-    r = load("sec_brute.csv")
-    fig, ax = plt.subplots()
-    sty = {8: ("#c0392b", "o"), 16: ("#2c5fa8", "s"),
-           32: ("#16a085", "v"), 64: ("#8e44ad", "P")}
-    for Lp, (c, mk) in sty.items():
-        rows = [row for row in r if int(row["L"]) == Lp]
-        ax.semilogx([float(x["K"]) for x in rows],
-                    [float(x["best_rho"]) for x in rows],
-                    color=c, marker=mk, ls="-", label=f"$L={Lp}$")
-    ax.axhline(0.96, color=C_CH, ls="-.", lw=0.9, label="Break threshold")
-    ax.set_xlabel("Number of key guesses $K$")
-    ax.set_ylabel(r"Best key correlation $\kappa$")
-    ax.set_ylim(0, 1.05)
-    ax.legend(loc="upper left")
-    save(fig, "fig_sec_brute_rho")
 
 
 def fig_real():
     r = load("real_sec_ter.csv")
     x = col(r, "snr_db")
     fig, ax = plt.subplots()
+    # legitimate/OMA and insider/outsider coincide pairwise; layered
     ax.semilogy(x, col(r, "ter_legit"), color=C_LEGIT, marker="o", ls="-",
-                label=LBL["legit"])
+                label=LBL["legit"], **UNDER)
     ax.semilogy(x, col(r, "ter_oma"), color=C_OMA, marker="^", ls=":",
-                label=LBL["oma"])
+                label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "ter_insider"), color=C_PUB, marker="v", ls="-.",
-                label="Insider")
+                lw=2.6, alpha=0.85, ms=7, label=LBL["insider"])
     ax.semilogy(x, col(r, "ter_eve"), color=C_EVE, marker="s", ls="--",
-                label=LBL["eve_key"])
+                label=LBL["outsider"], **OVER)
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("TER")
     ax.set_xlim(min(x), max(x))
@@ -256,6 +251,9 @@ def fig_real():
 
 
 def fig_kpa():
+    """Known-plaintext recovery of the keyed masks at three collection
+    SNRs, with the permutation key under the same attack as the linear
+    comparison scheme."""
     r = load("kpa.csv")
     fig, ax = plt.subplots()
     sty = {0.0: ("#c0392b", "o"), 10.0: ("#2c5fa8", "s"),
@@ -265,7 +263,13 @@ def fig_kpa():
         n = [float(row["n_frames"]) for row in rows]
         ser = [float(row["eve_ser"]) for row in rows]
         ax.semilogx(n, ser, color=c, marker=mk, ls="-",
-                    label=f"{int(snr)} dB")
+                    label=LBL["mask"] + f", {int(snr)} dB")
+    try:
+        p = load("pkpa.csv")
+        ax.semilogx(col(p, "n_frames"), col(p, "eve_ser"), color=C_MATCH,
+                    marker="P", ls="--", label=LBL["perm"] + ", 20 dB")
+    except FileNotFoundError:
+        print("[skip] pkpa.csv not present yet")
     # legitimate reference measured with the SAME estimator as the
     # eavesdropper curves, namely the four-user average of eval_ser_sse
     # at L=16, taken from sec_keylen.csv rather than from the user-1
@@ -287,7 +291,6 @@ def main():
     try:
         fig_sens()
         fig_brute()
-        fig_brute_rho()
     except FileNotFoundError:
         print("[skip] attack-difficulty CSVs not present yet")
     try:

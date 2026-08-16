@@ -33,9 +33,13 @@ def masks(U, d, rng):
     return M / np.linalg.norm(M, axis=1, keepdims=True) * np.sqrt(d)
 
 
+ROWS = []                      # (tag, claim, emp, err, tol, verdict)
+
+
 def report(tag, claim, emp, tol, extra=""):
     err = abs(claim - emp)
     ok = err <= tol
+    ROWS.append((tag, claim, emp, err, tol, "PASS" if ok else "FAIL"))
     print(f"[{'PASS' if ok else 'FAIL'}] {tag}: claim={claim:.5g} "
           f"emp={emp:.5g} |err|={err:.2g} tol={tol:g} {extra}")
     return ok
@@ -195,6 +199,16 @@ def main():
     }
     print("\nsummary:", {k: ("PASS" if v else "FAIL") for k, v in results.items()})
     print("ALL PASS" if all(results.values()) else "SOME FAILED")
+    # stored artifact so every quoted verification number has a raw file
+    import csv as _csv
+    from pathlib import Path as _Path
+    data = _Path(__file__).resolve().parents[1] / "data"
+    with open(data / "verify_math.csv", "w", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["check", "claim", "empirical", "abs_err", "tol",
+                    "verdict"])
+        w.writerows(ROWS)
+    print("[csv]", data / "verify_math.csv")
 
 
 if __name__ == "__main__":
