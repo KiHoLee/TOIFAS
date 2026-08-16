@@ -136,7 +136,7 @@ def fig_snr():
 
 def fig_keylen():
     """The OMA reference is the resource-matched one of oma_ser_keylen,
-    which is undefined at key lengths where 16/L is not an integer; those
+    which is undefined below L=16 unless 16/L is an integer; those
     rows carry nan and are skipped."""
     r = load("sec_keylen.csv")
     x = col(r, "L", int)
@@ -169,7 +169,7 @@ def fig_jam():
             markevery=me, label=LBL["mask"] + ", matched")
     ax.plot(x, col(r, "oma_targeted"), color=C_PUB, marker="^", ls=":",
             markevery=me, label=LBL["oma"] + ", targeted")
-    # the two blind curves agree to 0.0015; deliberate layering
+    # the two blind curves agree to 0.002; deliberate layering
     ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-",
             markevery=me, label=LBL["mask"] + ", blind", **UNDER)
     ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
