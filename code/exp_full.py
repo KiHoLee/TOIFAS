@@ -149,9 +149,43 @@ def get_model(P=4, vu=16, d=64, U=4, iters=4000, seed=1, freeze_W=None, tag=""):
     return m
 
 
+def base_keys(U: int, Lp: int) -> torch.Tensor:
+    """The structured key family: U non-constant rows of a Walsh-Hadamard
+    matrix, truncated to Lp entries.
+
+    Row 0 of the Sylvester construction is the all-ones vector, which any
+    adversary can write down without searching, so the users take rows
+    1..U. The construction exists at power-of-two orders, so for other
+    key lengths the next power-of-two order is truncated to Lp entries.
+    That truncation keeps the entries unit modulus and, at every length
+    the evaluation uses, keeps the rows exactly orthogonal as well; the
+    measured cross-correlation is reported alongside every sweep point.
+    Requires U <= Lp - 1 non-constant rows to exist."""
+    n = 1 << max(math.ceil(math.log2(max(Lp, U + 1))), 1)
+    H = hadamard(n)
+    if H.shape[0] - 1 < U:
+        raise ValueError(f"key length {Lp} admits only {H.shape[0]-1} "
+                         f"non-constant rows, fewer than U={U}")
+    return torch.tensor(H[1:U + 1, :Lp].copy(), dtype=torch.float32)
+
+
+def main_model(iters=4000, P=4, vu=16, d=64, U=4):
+    """The main configuration used by every stage below.
+
+    The keys are frozen to the structured Walsh-Hadamard family rather
+    than learned. Unconstrained mask training converges to disjoint
+    sparse supports, that is, to an orthogonal slot allocation, which
+    collapses the superposition into OMA and leaves the key space far
+    smaller than a dense direction in R^L. The structured family is
+    dense, exactly orthogonal, and unit modulus, which is also the
+    condition the key-refresh invariance argument requires."""
+    return get_model(P=P, vu=vu, d=d, U=U, iters=iters,
+                     freeze_W=base_keys(U, d // P))
+
+
 def stage_A():
     print("[A] security vs SNR (V=65536) ...")
-    m = get_model(iters=4000)
+    m = main_model()
     snr = [float(v) for v in range(0, 21, 2)]
     frames = 800_000
     legit = eval_ser_sse(m, snr, frames=frames)
@@ -226,10 +260,14 @@ def oma_ser_keylen(L, snr_db, bits=16, n_grid=200_000):
     if bits % L:
         return float("nan")
     M = 2 ** (bits // L)
+    # M-PAM levels +-A, +-3A, ..., +-(M-1)A with unit AVERAGE symbol energy
+    # give A^2 = 3/(M^2-1), so the distance to the decision boundary is A
+    # and the Q-function argument is h*sqrt(3*g/(M^2-1)). Using 6 instead
+    # of 3 would assume an average energy of two per dimension.
     x = (np.arange(n_grid) + 0.5) / n_grid
     h = np.sqrt(-np.log(1.0 - x))
     g = 10.0 ** (snr_db / 10.0)
-    arg = np.clip(h * math.sqrt(6.0 * g / (M * M - 1.0)), 0, 38)
+    arg = np.clip(h * math.sqrt(3.0 * g / (M * M - 1.0)), 0, 38)
     q = (1.0 - 1.0 / M) * np.array([math.erfc(v / math.sqrt(2.0))
                                     for v in arg])
     q = np.clip(q, 0.0, 1.0)
@@ -239,8 +277,12 @@ def oma_ser_keylen(L, snr_db, bits=16, n_grid=200_000):
 def stage_B():
     print("[B] key length (dense grid so the curve is smooth) ...")
     rows = []
-    for d in [16, 24, 32, 40, 48, 56, 64, 80, 96, 128, 192, 256]:
-        m = get_model(d=d, iters=4000)
+    # L = d/P. Lengths 6, 10 and 14 are dropped because the
+    # truncated Walsh-Hadamard rows are not exactly orthogonal
+    # there, and L=4 admits only three non-constant rows for
+    # U=4 users.
+    for d in [32, 48, 64, 80, 96, 128, 192, 256]:
+        m = main_model(d=d)          # same structured family as Fig. 2
         lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
         ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
         ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
@@ -255,7 +297,7 @@ def stage_B():
 
 def stage_C():
     print("[C] jamming vs JSR ...")
-    m = get_model(iters=4000)
+    m = main_model()
     jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
     blind = eval_ser_jam(m, 10.0, jsr, frames=500_000, mode="blind", target=0)
     matched = eval_ser_jam(m, 10.0, jsr, frames=500_000, mode="matched", target=0)
@@ -280,7 +322,7 @@ def stage_D():
     # Walsh-Hadamard rows (orthogonal). Row 0 of the Sylvester
     # construction is the all-ones vector, which any adversary can write
     # down, so it is excluded and the users take rows 1 to U.
-    Hd = torch.tensor(hadamard(Lp)[1:U + 1], dtype=torch.float32)
+    Hd = base_keys(U, Lp)          # the main configuration's key family
     fams["hadamard"] = Hd
     ones = torch.ones(U, Lp)          # the cheapest possible guess
     rows = []
@@ -395,7 +437,7 @@ def stage_E():
     attacker can BUILD from public knowledge at JSR 0 dB (matched if the
     masks are public, blind if the PHY structure is secret)."""
     print("[E] scheme comparison ...")
-    m = get_model(iters=4000)
+    m = main_model()
     F = 400_000
     d = m.P * m.L
     set_seed(20260813)
@@ -506,7 +548,7 @@ def stage_F():
         rho_max(K, L) is sampled by Monte Carlo and mapped through the
         measured sensitivity curve of (i)."""
     print("[F] attack difficulty ...")
-    m = get_model(iters=4000)
+    m = main_model()
     F = 200_000
     true_m = m.masks().detach().cpu()
     gen = torch.Generator().manual_seed(31)
@@ -582,7 +624,7 @@ def stage_I():
     unknown pad bits, which stay uniform, are all guessed right.
     """
     print("[I] key sensitivity across schemes ...")
-    m = get_model(iters=4000)
+    m = main_model()
     F = 600_000          # more frames per point for a smooth curve
     TRIALS_MASK = 12     # independent substitute keys per point
     d = m.P * m.L
@@ -726,7 +768,7 @@ def stage_L():
                        slot assignment is public and needs no key
     """
     print("[L] jamming across schemes ...")
-    m = get_model(iters=4000)
+    m = main_model()
     F = 300_000
     d = m.P * m.L
     gp = torch.Generator().manual_seed(11)

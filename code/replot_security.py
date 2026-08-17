@@ -11,9 +11,11 @@ Label dictionary is fixed here and copied verbatim into tables and prose.
   fig_sec_kpa.pdf     : eavesdropper SER vs known-plaintext frames (Fig. 7)
   fig_sec_real.pdf    : token error rate on real streams (Fig. 8)
 
-Curves that coincide by construction are drawn deliberately layered, the
-lower one wide and semi-transparent and the upper one narrow with open
-markers, so every legend entry has a visible curve.
+Curves that coincide by construction are drawn deliberately layered: the
+lower one wide and semi-transparent, the upper one narrow with open
+markers, and their markers staggered to different sample points through
+markevery offsets. Marker size is uniform across every figure, so the
+stagger, not the size, is what keeps each legend entry visible.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -34,7 +36,7 @@ plt.rcParams.update({
     "font.serif": ["DejaVu Serif", "Times New Roman"],
     "font.size": 9,
     "axes.labelsize": 9,
-    "legend.fontsize": 7.4,
+    "legend.fontsize": 6.6,
     "xtick.labelsize": 8,
     "ytick.labelsize": 8,
     "axes.grid": True,
@@ -42,7 +44,7 @@ plt.rcParams.update({
     "grid.linewidth": 0.4,
     "grid.alpha": 0.6,
     "lines.linewidth": 1.3,
-    "lines.markersize": 3.4,
+    "lines.markersize": 4.5,
     "figure.figsize": (3.15, 2.36),
     "pdf.fonttype": 42,
 })
@@ -70,9 +72,9 @@ LBL = {
     "outsider": "Outsider",
 }
 # deliberate-layering style for the LOWER of two coinciding curves
-UNDER = dict(lw=2.6, ms=7, alpha=0.85)
+UNDER = dict(lw=2.6, alpha=0.85)          # thick filled line, layered under
 # and for the curve riding on top of it
-OVER = dict(lw=1.2, ms=4.5, mfc="none")
+OVER = dict(lw=1.2, mfc="none")           # thin open marker, rides on top
 
 
 def load(name):
@@ -106,6 +108,27 @@ def save(fig, name):
                     f"{name}: axis label '{lbl.get_text()}' is clipped "
                     f"(label {b} outside figure {fbox}); shorten the "
                     f"label or widen the margin")
+        # No curve may pass under the legend box. Reading the code cannot
+        # reveal this, so the check is made on the rendered geometry, the
+        # same discipline as the clipping guard above.
+        leg = ax.get_legend()
+        if leg is not None:
+            lb = leg.get_window_extent()
+            for line in ax.get_lines():
+                # full-span reference lines (axhline/axvline) carry axes-
+                # fraction endpoints [0,1]; they are not data curves and,
+                # spanning the whole axis, would forbid any bottom legend
+                xd = list(line.get_xdata())
+                if xd == [0, 1] or list(line.get_ydata()) == [0, 1]:
+                    continue
+                xy = line.get_xydata()
+                if len(xy) == 0:
+                    continue
+                for px, py in ax.transData.transform(xy):
+                    if lb.x0 <= px <= lb.x1 and lb.y0 <= py <= lb.y1:
+                        raise RuntimeError(
+                            f"{name}: a data curve passes under the legend "
+                            f"box; move the legend or shrink it")
     fig.savefig(FIG / f"{name}.pdf")
     plt.close(fig)
     print("[OK]", name)
@@ -117,11 +140,11 @@ def fig_snr():
     fig, ax = plt.subplots()
     # legitimate and OMA coincide by construction; layered deliberately
     ax.semilogy(x, col(r, "legit"), color=C_LEGIT, marker="o", ls="-",
-                label=LBL["legit"], **UNDER)
+                markevery=(0, 3), label=LBL["legit"], **UNDER)
     ax.semilogy(x, col(r, "oma"), color=C_OMA, marker="^", ls=":",
-                label=LBL["oma"], **OVER)
+                markevery=(1, 3), label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "eve_public"), color=C_PUB, marker="v",
-                ls="none", markersize=5.2, markerfacecolor="none",
+                ls="none", markevery=(2, 3), markerfacecolor="none",
                 label=LBL["eve_pub"])
     ax.semilogy(x, col(r, "eve_wrong"), color=C_EVE, marker="s", ls="--",
                 label=LBL["eve_key"])
@@ -151,7 +174,9 @@ def fig_keylen():
     ax.set_xlabel("Key length $L$")
     ax.set_ylabel("SER")
     ax.set_xscale("log", base=2)
-    ax.legend(loc="center right", bbox_to_anchor=(0.98, 0.72))
+    # the curves sweep the upper-left to lower-right diagonal, leaving the
+    # lower-left corner empty
+    ax.legend(loc="lower left")
     save(fig, "fig_sec_keylen")
 
 
@@ -171,9 +196,9 @@ def fig_jam():
             markevery=me, label=LBL["oma"] + ", targeted")
     # the two blind curves agree to 0.002; deliberate layering
     ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-",
-            markevery=me, label=LBL["mask"] + ", blind", **UNDER)
+            markevery=(0, me), label=LBL["mask"] + ", blind", **UNDER)
     ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
-            markevery=me, label=LBL["perm"] + ", blind", **OVER)
+            markevery=(me // 2, me), label=LBL["perm"] + ", blind", **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
     ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9)
     ax.text(max(x) - 0.6, nojam + 0.02, LBL["nojam"], ha="right",
@@ -194,11 +219,11 @@ def fig_sens():
     x = col(r, "frac")
     fig, ax = plt.subplots()
     ax.plot(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
-            label=LBL["mask"], **UNDER)
+            markevery=(0, 3), label=LBL["mask"], **UNDER)
     ax.plot(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
-            label=LBL["perm"], **OVER)
+            markevery=(1, 3), label=LBL["perm"], **OVER)
     ax.plot(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
-            lw=1.2, ms=4.5, mfc="none", label=LBL["pad"])
+            markevery=(2, 3), lw=1.2, mfc="none", label=LBL["pad"])
     chance = 1.0 - (1.0 / 16.0) ** 4
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
     ax.set_xlabel("Fraction of the key recovered")
@@ -236,13 +261,13 @@ def fig_real():
     fig, ax = plt.subplots()
     # legitimate/OMA and insider/outsider coincide pairwise; layered
     ax.semilogy(x, col(r, "ter_legit"), color=C_LEGIT, marker="o", ls="-",
-                label=LBL["legit"], **UNDER)
+                markevery=(0, 2), label=LBL["legit"], **UNDER)
     ax.semilogy(x, col(r, "ter_oma"), color=C_OMA, marker="^", ls=":",
-                label=LBL["oma"], **OVER)
+                markevery=(1, 2), label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "ter_insider"), color=C_PUB, marker="v", ls="-.",
-                lw=2.6, alpha=0.85, ms=7, label=LBL["insider"])
+                markevery=(0, 2), lw=2.6, alpha=0.85, label=LBL["insider"])
     ax.semilogy(x, col(r, "ter_eve"), color=C_EVE, marker="s", ls="--",
-                label=LBL["outsider"], **OVER)
+                markevery=(1, 2), label=LBL["outsider"], **OVER)
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("TER")
     ax.set_xlim(min(x), max(x))
@@ -280,7 +305,10 @@ def fig_kpa():
     ax.set_xlabel("Known-plaintext frames $N$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xscale("log", base=2)
-    ax.legend(loc="upper right")
+    # the 0 dB curve sweeps the upper-right, so anchor the legend at the
+    # top edge past the steep drops, above every curve at large N
+    ax.set_ylim(top=1.18)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.0, 1.04))
     save(fig, "fig_sec_kpa")
 
 

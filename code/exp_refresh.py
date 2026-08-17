@@ -45,19 +45,13 @@ import numpy as np
 import torch
 
 from sse_lib import DATA, DEVICE, SSE, write_csv, eval_ser_sse
-from exp_full import hadamard, get_model, eval_ser_eve, eve_wrong_mask
+from exp_full import (hadamard, get_model, base_keys, eval_ser_eve,
+                      eve_wrong_mask)
 from exp_kpa import collect_known_plaintext, solve_keys
 
 SEED = 5150
 BLOCKS = 24
 FRAMES = 300_000
-
-
-def base_keys(U: int, Lp: int) -> torch.Tensor:
-    """The fixed orthogonal key set the codebook is trained around. Row 0
-    of the Sylvester construction is the all-ones vector, which any
-    adversary can write down, so the users take rows 1 to U."""
-    return torch.tensor(hadamard(Lp)[1:U + 1], dtype=torch.float32)
 
 
 def kdf_invariant(seed: int, block: int, U: int, Lp: int):

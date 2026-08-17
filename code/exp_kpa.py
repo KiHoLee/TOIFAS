@@ -25,7 +25,7 @@ import torch
 
 from sse_lib import (DATA, DEVICE, SSE, rayleigh_gain, snr_to_sigma2,
                      set_seed, write_csv, eval_ser_sse)
-from exp_full import get_model, eval_ser_eve
+from exp_full import main_model, eval_ser_eve
 
 SNRS = [0.0, 10.0, 20.0]
 NFRAMES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32, 48, 64]
@@ -110,7 +110,7 @@ def key_correlation(est: torch.Tensor, true: torch.Tensor) -> float:
 
 def main():
     set_seed(SEED)
-    model = get_model(iters=4000)
+    model = main_model()
     model.eval()
     true_m = model.masks().detach()
     legit = eval_ser_sse(model, [10.0], frames=200_000)[0]

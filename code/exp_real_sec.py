@@ -29,7 +29,7 @@ import torch
 import sse_lib as L
 from sse_lib import (DATA, DEVICE, SSE, rayleigh_gain, snr_to_sigma2,
                      set_seed, write_csv)
-from exp_full import get_model, eve_wrong_mask
+from exp_full import main_model, eve_wrong_mask
 
 SNR_GRID = [0, 4, 8, 12, 16, 20, 24, 28]
 # headline recovery is meaningful only where the legitimate user clears
@@ -136,7 +136,7 @@ def main():
           f"distinct tokens, max id {int(ids_all.max())}")
 
     # keys and codebook trained on uniform indices, reused unchanged
-    model = get_model(P=P_MAX, vu=VU, d=64, U=U, iters=4000)
+    model = main_model(P=P_MAX, vu=VU, d=64, U=U)
     model.eval()
 
     eve_m = eve_wrong_mask(U, model.L, seed=20260813)          # outsider
