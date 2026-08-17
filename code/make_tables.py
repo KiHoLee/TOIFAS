@@ -67,9 +67,15 @@ def compare_table():
 def maskfam_table():
     print("% Table: key families (from sec_maskfam.csv)")
     for r in csv.DictReader(open(DATA / "sec_maskfam.csv")):
-        cells = [cell(r[k], False) for k in
+        # the structured family is the main configuration, so its row is
+        # emphasized the same way the proposed row is in the comparison
+        b = r["family"] == "hadamard"
+        cells = [cell(r[k], b) for k in
                  ("legit_ser", "eve_ser", "eve_ones_ser", "mask_xcorr")]
-        print(f"{NAME[r['family']]} & " + " & ".join(cells) + r" \\")
+        name = NAME[r["family"]]
+        if b:
+            name = r"\textbf{" + name + "}"
+        print(f"{name} & " + " & ".join(cells) + r" \\")
 
 
 def real_table():
