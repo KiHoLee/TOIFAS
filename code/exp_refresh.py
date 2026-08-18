@@ -26,7 +26,7 @@ orthogonal. Two constructions are compared here.
        the codebook together, which is a relabeling,  log2(L!) bits
     3. a permutation of which user holds which row,   log2(U!) bits
 
-  At L=16 and U=4 that is 16 + 44.25 + 4.58 = 64.8 bits per block, and
+  At L=64 and U=4 that is 64 + 296.0 + 4.58 = 364.6 bits per block, and
   each transformation is verified below to leave the legitimate error
   rate unchanged.
 
@@ -45,7 +45,7 @@ import numpy as np
 import torch
 
 from sse_lib import DATA, DEVICE, SSE, write_csv, eval_ser_sse
-from exp_full import (hadamard, get_model, base_keys, eval_ser_eve,
+from exp_full import (MAIN_D, hadamard, get_model, base_keys, eval_ser_eve,
                       eve_wrong_mask)
 from exp_kpa import collect_known_plaintext, solve_keys
 
@@ -92,7 +92,7 @@ def install(model: SSE, keys: torch.Tensor, codebook: torch.Tensor,
 
 
 def main():
-    P, VU, D, U = 4, 16, 64, 4
+    P, VU, D, U = 4, 16, MAIN_D, 4
     Lp = D // P
     print(f"[K] refresh: L={Lp}, U={U}, "
           f"{entropy_bits(U, Lp):.1f} bits per block from the invariance group")

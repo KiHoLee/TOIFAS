@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Where does the legitimate advantage over OMA go?
 
-An ideal M-ary receiver at the main configuration should reach 0.199 at
-10 dB against the 0.275 of resource-matched OMA, a factor of 1.38, while
-the system measures 0.257, a factor of 1.07. This script splits the
-shortfall into its two causes: residual multi-user interference, which
-orthogonal keys do not remove because masking is elementwise, and the
-distance the trained unit codebook falls short of an orthogonal set.
+The legitimate curve sits above the single-user M-ary bound, and this
+script splits the distance into its two possible causes: residual
+multi-user interference, which orthogonal keys need not remove because
+masking is elementwise, and the distance the trained unit codebook falls
+short of an orthogonal set. Run it against whichever configuration
+exp_full.MAIN_D currently names.
 """
 import math
 import sys
@@ -17,7 +17,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sse_lib as L
 from sse_lib import DEVICE, snr_to_sigma2, rayleigh_gain
-from exp_full import main_model
+from exp_full import main_model, oma_ser_keylen
 
 SNR_DB = 10.0
 FRAMES = 400_000
@@ -80,8 +80,7 @@ def main():
     print("user-0 SER, all four users transmitting   : %.4f" % four)
     print("user-0 SER, other users silent            : %.4f" % solo)
     print("OMA, resource matched (closed form)       : %.4f"
-          % L.oma_ser([SNR_DB])[0])
-    print("ideal 16-ary orthogonal (separate MC)     : 0.1986")
+          % oma_ser_keylen(m.L, SNR_DB))
 
 
 if __name__ == "__main__":

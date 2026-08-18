@@ -35,7 +35,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ----------------------------------------------------------------------
 # global configuration
 # ----------------------------------------------------------------------
-D = 64          # embedding dimension (real)
+D = 256         # embedding dimension (real)
 U = 4           # users
 VU = 16         # unit codebook size
 P_MAX = 4       # periods for the main configuration, V = 16^4 = 65536

@@ -2,7 +2,7 @@
 
 Reuses the SSE transmit/receive core from sse_lib.py and adds an
 eavesdropper receiver, a jammer channel, and structured mask families.
-Main configuration d=64, P=4, Vu=16 (V=Vu^P=65,536), U=4 users, matching
+Main configuration d=256, P=4, Vu=16 (V=Vu^P=65,536), U=4 users, matching
 the language-model token vocabulary scale.
 
 Stages (each writes a CSV to ../data; figures come from replot_security.py
@@ -136,7 +136,11 @@ def eve_wrong_mask(U, Lp, seed):
     return W / W.norm(dim=1, keepdim=True) * math.sqrt(Lp)
 
 
-def get_model(P=4, vu=16, d=64, U=4, iters=4000, seed=1, freeze_W=None, tag=""):
+MAIN_D = 256      # embedding dimension of the main configuration
+
+
+def get_model(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1,
+              freeze_W=None, tag=""):
     """Train an SSE model, optionally with fixed (frozen) masks."""
     set_seed(seed)
     m = SSE(P=P, vu=vu, d=d, users=U).to(DEVICE)
@@ -169,7 +173,7 @@ def base_keys(U: int, Lp: int) -> torch.Tensor:
     return torch.tensor(H[1:U + 1, :Lp].copy(), dtype=torch.float32)
 
 
-def main_model(iters=4000, P=4, vu=16, d=64, U=4):
+def main_model(iters=4000, P=4, vu=16, d=MAIN_D, U=4):
     """The main configuration used by every stage below.
 
     The keys are frozen to the structured Walsh-Hadamard family rather
@@ -195,7 +199,7 @@ def stage_A():
     # conventional public-mask scheme: the eavesdropper holds the same
     # (public) masks and decodes exactly like a legitimate user
     eve_p = eval_ser_eve(m, m.masks().detach().cpu(), snr, frames=frames)
-    oma = oma_ser(snr, bits=int(math.log2(m.V)))
+    oma = [oma_ser_keylen(m.L, s, bits=int(math.log2(m.V))) for s in snr]
     chance = 1.0 - (1.0 / m.vu) ** m.P
     write_csv(DATA / "sec_snr.csv",
               ["snr_db", "legit", "eve_wrong", "eve_none", "eve_public",
@@ -236,7 +240,7 @@ def train_sse_reg(m: SSE, iters=4000, batch=256, lr=3e-3, seed=1,
     return m
 
 
-def get_model_reg(P=4, vu=16, d=64, U=4, iters=4000, seed=1):
+def get_model_reg(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1):
     set_seed(seed)
     m = SSE(P=P, vu=vu, d=d, users=U).to(DEVICE)
     train_sse_reg(m, iters=iters, seed=seed)
@@ -314,7 +318,7 @@ def stage_C():
 
 def stage_D():
     print("[D] mask families ...")
-    P, vu, d, U = 4, 16, 64, 4
+    P, vu, d, U = 4, 16, MAIN_D, 4
     Lp = d // P
     fams = {}
     # random fixed masks
@@ -475,8 +479,7 @@ def stage_E():
     # is public so the matched jammer remains buildable
     rows.append(("index_cipher", lg, chance, chance, jm2))
     # S5 OMA digital, no encryption: open to everyone
-    from sse_lib import oma_ser
-    lg5 = oma_ser([10.0], bits=int(math.log2(m.V)))[0]
+    lg5 = oma_ser_keylen(m.L, 10.0, bits=int(math.log2(m.V)))
     rows.append(("oma_plain", lg5, lg5, lg5, float("nan")))
 
     write_csv(DATA / "sec_compare.csv",
@@ -688,7 +691,7 @@ def stage_J():
     mask_arr = np.array([float(r["ser_mask"]) for r in cmp_rows])
     perm_arr = np.array([float(r["ser_perm"]) for r in cmp_rows])
 
-    d, L, V = 64, 16, 65536
+    d, L, V = MAIN_D, MAIN_D // 4, 65536
     # channel floor of the cipher receiver, read from the stage-I curve
     # at a fully known pad so both figures share one source
     lg1 = 1.0 - (1.0 - float(cmp_rows[-1]["ser_pad"]))
@@ -702,9 +705,11 @@ def stage_J():
         best_kappa = np.empty(trials)
         best_frac = np.empty(trials)
         for t in range(trials):
-            g = rng.standard_normal((K, L))
-            g /= np.linalg.norm(g, axis=1, keepdims=True)
-            best_kappa[t] = np.abs(g[:, 0]).max()
+            # |first coordinate| of a uniform random unit vector in R^L:
+            # its square is Beta(1/2, (L-1)/2), so the best of K draws
+            # needs K scalars rather than K*L Gaussians
+            best_kappa[t] = np.sqrt(rng.beta(0.5, (L - 1) / 2.0,
+                                             size=K).max())
             # permutation: fraction of fixed points, Binomial(d, 1/d) per
             # draw, so the best of K draws is the max of K such counts
             best_frac[t] = rng.binomial(d, 1.0 / d, size=K).max() / d
@@ -726,14 +731,16 @@ def csv_rows(path):
         yield from _csv.DictReader(f)
 
 
-def oma_ser_jammed(snr_db, jsr_db_list, bits=16, U=4, n_grid=4096):
+def oma_ser_jammed(snr_db, jsr_db_list, bits=16, U=4, d=256, n_grid=4096):
     """OMA under a jammer that concentrates on the victim's slots.
 
-    An OMA user occupies d/U exclusive real dimensions that are public,
-    so a jammer needs no key to put all of its power there. With unit
-    energy per real dimension and a total jammer energy of rho times the
-    frame energy, concentrating on d/U of the d dimensions gives a
-    per-dimension jammer variance of U*rho.
+    An OMA user occupies L = d/U exclusive real dimensions that are
+    public, and drives its 16 index bits on 16 of them with the whole
+    allocation energy, an amplitude gain of sqrt(L/bits) per bit. A
+    jammer needs no key to put all of its power on those same public
+    dimensions. With unit energy per real dimension and a total jammer
+    energy of rho times the frame energy, concentrating on bits of the d
+    dimensions gives a per-dimension jammer variance of (d/bits)*rho.
 
     The jammer reaches the victim through its own Rayleigh channel, the
     same convention eval_scheme uses for every simulated scheme, so the
@@ -746,11 +753,12 @@ def oma_ser_jammed(snr_db, jsr_db_list, bits=16, U=4, n_grid=4096):
     hj2 = h2.clone()                           # |hJ|^2 ~ Exp(1), independent
     h = h2.sqrt()[:, None]                     # (n,1) signal amplitude
     snr = 10.0 ** (snr_db / 10.0)
+    gain = math.sqrt((d / U) / bits)                      # antipodal amplitude
     out = []
     for jsr_db in jsr_db_list:
         rho = 10.0 ** (jsr_db / 10.0)
-        var = (1.0 / snr + U * rho * hj2)[None, :]        # (1,n)
-        arg = (h / var.sqrt()).clamp(0, 38)
+        var = (1.0 / snr + (d / bits) * rho * hj2)[None, :]        # (1,n)
+        arg = (h * gain / var.sqrt()).clamp(0, 38)
         pe = 0.5 * torch.erfc(arg / math.sqrt(2.0))       # per-bit error
         out.append(float((1.0 - (1.0 - pe) ** bits).mean()))
     return out
@@ -774,7 +782,8 @@ def stage_L():
     gp = torch.Generator().manual_seed(11)
     perms = torch.randperm(d, generator=gp)[None].repeat(m.users, 1)
     jsr = [float(v) for v in range(-10, 21, 2)]
-    oma = oma_ser_jammed(10.0, jsr, bits=int(math.log2(m.V)), U=m.users)
+    oma = oma_ser_jammed(10.0, jsr, bits=int(math.log2(m.V)),
+                         U=m.users, d=m.d)
     rows = []
     for i, j in enumerate(jsr):
         blind = eval_scheme(m, 10.0, F, jam_w="blind", jsr_db=j)

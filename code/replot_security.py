@@ -129,6 +129,24 @@ def save(fig, name, insets=()):
                         raise RuntimeError(
                             f"{name}: a data curve passes under the legend "
                             f"box; move the legend or shrink it")
+            for t in ax.texts:
+                tb = t.get_window_extent()
+                if (lb.x0 < tb.x1 and tb.x0 < lb.x1
+                        and lb.y0 < tb.y1 and tb.y0 < lb.y1):
+                    raise RuntimeError(
+                        f"{name}: the annotation {t.get_text()!r} sits under "
+                        f"the legend box; move one of them")
+        for t in ax.texts:
+            tb = t.get_window_extent()
+            for line in ax.get_lines():
+                xy = line.get_xydata()
+                if len(xy) == 0:
+                    continue
+                for px, py in ax.transData.transform(xy):
+                    if tb.x0 <= px <= tb.x1 and tb.y0 <= py <= tb.y1:
+                        raise RuntimeError(
+                            f"{name}: a curve is drawn through the "
+                            f"annotation {t.get_text()!r}; move it")
     for ins in insets:
         ib = ins.get_window_extent()
         for a in fig.axes:
@@ -146,6 +164,53 @@ def save(fig, name, insets=()):
     fig.savefig(FIG / f"{name}.pdf")
     plt.close(fig)
     print("[OK]", name)
+
+
+def main_legit(snr_db="10"):
+    """The legitimate SER of the main configuration, read from the curve
+    the main configuration produced rather than looked up by key length."""
+    for r in load("sec_snr.csv"):
+        if float(r["snr_db"]) == float(snr_db):
+            return float(r["legit"])
+    raise KeyError("no %s dB row in sec_snr.csv" % snr_db)
+
+
+def place_legend(ax, cands=("lower left", "center left", "center right",
+                           "lower center", "upper right", "upper center",
+                           "center", "lower right"),
+                 sizes=(6.6, 6.2, 5.8, 5.4, 5.0)):
+    """Choose the location and font size whose box the fewest curve points
+    fall inside, scored on rendered geometry rather than guessed from the
+    data. The size sweep is what makes a long label set placeable: a
+    five-entry legend of full scheme names has no clear corner at the
+    default size on every figure."""
+    best = None
+    for size in sizes:
+        for loc in cands:
+            leg = ax.legend(loc=loc, prop={"size": size})
+            ax.figure.canvas.draw()
+            lb = leg.get_window_extent()
+            hits = 0
+            for line in ax.get_lines():
+                xy = line.get_xydata()
+                if len(xy) == 0:
+                    continue
+                for px, py in ax.transData.transform(xy):
+                    if lb.x0 <= px <= lb.x1 and lb.y0 <= py <= lb.y1:
+                        hits += 1
+            for t in ax.texts:
+                tb = t.get_window_extent()
+                if (lb.x0 < tb.x1 and tb.x0 < lb.x1
+                        and lb.y0 < tb.y1 and tb.y0 < lb.y1):
+                    hits += 50      # an annotation hidden is worse than a
+                    #                 few curve points clipped
+            if best is None or hits < best[2]:
+                best = (loc, size, hits)
+            if hits == 0:
+                ax.legend(loc=loc, prop={"size": size})
+                return best
+    ax.legend(loc=best[0], prop={"size": best[1]})
+    return best
 
 
 def fig_snr():
@@ -167,22 +232,8 @@ def fig_snr():
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
-    ax.legend(loc="lower left")
-
-    # the gap is a coding gain of a few percent, invisible against two
-    # decades of SER, so an inset reports it as a ratio
-    lg, om = col(r, "legit"), col(r, "oma")
-    ins = ax.inset_axes([0.57, 0.58, 0.39, 0.25])
-    ins.plot(x, [o / l for l, o in zip(lg, om)], color=C_OMA, lw=1.0,
-             marker="^", ms=2.4, markevery=2)
-    ins.axhline(1.0, color="0.55", lw=0.6, ls="--")
-    ins.set_xlim(min(x), max(x))
-    ins.set_ylim(0.995, 1.105)
-    ins.set_yticks([1.00, 1.05, 1.10])
-    ins.set_xticks([0, 10, 20])
-    ins.tick_params(labelsize=5.2, length=1.8, pad=1.0)
-    ins.set_title("OMA / proposed SER", fontsize=5.6, pad=1.5)
-    save(fig, "fig_sec_snr", insets=[ins])
+    place_legend(ax)
+    save(fig, "fig_sec_snr")
 
 
 def fig_keylen():
@@ -204,7 +255,7 @@ def fig_keylen():
     ax.set_xscale("log", base=2)
     # the curves sweep the upper-left to lower-right diagonal, leaving the
     # lower-left corner empty
-    ax.legend(loc="lower left")
+    place_legend(ax)
     save(fig, "fig_sec_keylen")
 
 
@@ -228,14 +279,13 @@ def fig_jam():
     ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
             markevery=(me // 2, me), label=LBL["perm"] + ", blind", **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
-    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9)
-    ax.text(max(x) - 0.6, nojam + 0.02, LBL["nojam"], ha="right",
-            va="bottom", fontsize=7.4, color="#555555")
+    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9,
+               label=LBL["nojam"])
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
-    ax.set_ylim(0.2, 1.02)
-    ax.legend(loc="center right", bbox_to_anchor=(0.985, 0.47))
+    ax.set_ylim(0.8 * nojam, 1.02)
+    place_legend(ax)
     save(fig, "fig_sec_jam")
 
 
@@ -257,7 +307,7 @@ def fig_sens():
     ax.set_xlabel("Fraction of the key recovered")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xlim(0, 1)
-    ax.legend(loc="lower left")
+    place_legend(ax)
     save(fig, "fig_sec_sens")
 
 
@@ -273,13 +323,12 @@ def fig_brute():
                 label=LBL["pad"], **OVER)
     ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
                 label=LBL["mask"])
-    kl = load("sec_keylen.csv")
-    legit = float([q for q in kl if int(q["L"]) == 16][0]["legit_ser"])
+    legit = main_legit()
     ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
     ax.set_xlabel("Number of key guesses $K$")
     ax.set_ylabel("Eavesdropper SER")
-    ax.set_ylim(0.2, 1.05)
-    ax.legend(loc="lower left")
+    ax.set_ylim(0.8 * legit, 1.05)
+    place_legend(ax)
     save(fig, "fig_sec_brute")
 
 
@@ -299,7 +348,7 @@ def fig_real():
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("TER")
     ax.set_xlim(min(x), max(x))
-    ax.legend(loc="lower left")
+    place_legend(ax)
     save(fig, "fig_sec_real")
 
 
@@ -325,10 +374,9 @@ def fig_kpa():
         print("[skip] pkpa.csv not present yet")
     # legitimate reference measured with the SAME estimator as the
     # eavesdropper curves, namely the four-user average of eval_ser_sse
-    # at L=16, taken from sec_keylen.csv rather than from the user-1
-    # convention of the scheme-comparison table
-    kl = load("sec_keylen.csv")
-    legit = float([r for r in kl if int(r["L"]) == 16][0]["legit_ser"])
+    # in the main configuration, rather than the user-1 convention of the
+    # scheme-comparison table
+    legit = main_legit()
     ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
     ax.set_xlabel("Known-plaintext frames $N$")
     ax.set_ylabel("Eavesdropper SER")
@@ -336,7 +384,7 @@ def fig_kpa():
     # the 0 dB curve sweeps the upper-right, so anchor the legend at the
     # top edge past the steep drops, above every curve at large N
     ax.set_ylim(top=1.18)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.0, 1.04))
+    place_legend(ax)
     save(fig, "fig_sec_kpa")
 
 

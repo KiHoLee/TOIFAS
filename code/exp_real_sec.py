@@ -29,7 +29,7 @@ import torch
 import sse_lib as L
 from sse_lib import (DATA, DEVICE, SSE, rayleigh_gain, snr_to_sigma2,
                      set_seed, write_csv)
-from exp_full import main_model, eve_wrong_mask
+from exp_full import main_model, eve_wrong_mask, MAIN_D
 
 SNR_GRID = [0, 4, 8, 12, 16, 20, 24, 28]
 # headline recovery is meaningful only where the legitimate user clears
@@ -101,15 +101,22 @@ def wrong_keyed(model: SSE, digits_all, snr_db, seed, rx_masks=None,
 
 
 @torch.no_grad()
-def wrong_oma(ids_all, snr_db, seed, bits=16):
-    """Antipodal signaling on the actual token bits, same frame energy."""
+def wrong_oma(ids_all, snr_db, seed, bits=16, d=256, users=4):
+    """Antipodal signaling on the actual token bits, same frame energy.
+
+    The OMA user owns d/U exclusive dimensions for its 16 bits and puts
+    the whole allocation energy on them, so the antipodal amplitude
+    carries a factor sqrt((d/U)/bits) over the one-bit-per-dimension
+    case. Without it the reference would spend only a quarter of the
+    energy the proposed user spends."""
     torch.manual_seed(seed)
     N, Uu = ids_all.shape
     b = ((ids_all[..., None] >> torch.arange(bits)) & 1).float() * 2 - 1
     b = b.to(DEVICE)
     sigma = math.sqrt(1.0 / (10.0 ** (snr_db / 10.0)))
+    gain = math.sqrt((d / users) / bits)
     h = rayleigh_gain((N, Uu, 1))
-    y = h * b + sigma * torch.randn(N, Uu, bits, device=DEVICE)
+    y = gain * h * b + sigma * torch.randn(N, Uu, bits, device=DEVICE)
     return ((y * b) < 0).any(dim=2).cpu()
 
 
@@ -136,7 +143,7 @@ def main():
           f"distinct tokens, max id {int(ids_all.max())}")
 
     # keys and codebook trained on uniform indices, reused unchanged
-    model = main_model(P=P_MAX, vu=VU, d=64, U=U)
+    model = main_model(P=P_MAX, vu=VU, d=MAIN_D, U=U)
     model.eval()
 
     eve_m = eve_wrong_mask(U, model.L, seed=20260813)          # outsider
