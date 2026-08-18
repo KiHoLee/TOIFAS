@@ -86,7 +86,7 @@ def col(rows, k, f=float):
     return [f(r[k]) for r in rows]
 
 
-def save(fig, name):
+def save(fig, name, insets=()):
     """Write the figure and assert that no axis label is clipped.
 
     A long y label, or wide minor tick labels such as 6x10^-1 on a log
@@ -129,6 +129,20 @@ def save(fig, name):
                         raise RuntimeError(
                             f"{name}: a data curve passes under the legend "
                             f"box; move the legend or shrink it")
+    for ins in insets:
+        ib = ins.get_window_extent()
+        for a in fig.axes:
+            if a is ins:
+                continue
+            for line in a.get_lines():
+                xy = line.get_xydata()
+                if len(xy) == 0:
+                    continue
+                for px, py in a.transData.transform(xy):
+                    if ib.x0 <= px <= ib.x1 and ib.y0 <= py <= ib.y1:
+                        raise RuntimeError(
+                            f"{name}: a data curve passes under the inset "
+                            f"panel; move or shrink the inset")
     fig.savefig(FIG / f"{name}.pdf")
     plt.close(fig)
     print("[OK]", name)
@@ -154,7 +168,21 @@ def fig_snr():
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
     ax.legend(loc="lower left")
-    save(fig, "fig_sec_snr")
+
+    # the gap is a coding gain of a few percent, invisible against two
+    # decades of SER, so an inset reports it as a ratio
+    lg, om = col(r, "legit"), col(r, "oma")
+    ins = ax.inset_axes([0.57, 0.58, 0.39, 0.25])
+    ins.plot(x, [o / l for l, o in zip(lg, om)], color=C_OMA, lw=1.0,
+             marker="^", ms=2.4, markevery=2)
+    ins.axhline(1.0, color="0.55", lw=0.6, ls="--")
+    ins.set_xlim(min(x), max(x))
+    ins.set_ylim(0.995, 1.105)
+    ins.set_yticks([1.00, 1.05, 1.10])
+    ins.set_xticks([0, 10, 20])
+    ins.tick_params(labelsize=5.2, length=1.8, pad=1.0)
+    ins.set_title("OMA / proposed SER", fontsize=5.6, pad=1.5)
+    save(fig, "fig_sec_snr", insets=[ins])
 
 
 def fig_keylen():

@@ -127,6 +127,34 @@ chk("legit leads OMA at every point",
         for s in st["recovery"]),
     "checked %d points" % len(st["recovery"]))
 
+# --- the room argument of Fig. 2 and its evidence in Fig. 3 -----------
+kl = {int(r["L"]): r for r in rows("sec_keylen.csv")}
+r8 = kl[8]
+chk("L=8 crowding, proposal behind OMA",
+    round(float(r8["legit_ser"]), 3) == 0.949
+    and round(float(r8["oma"]), 3) == 0.685,
+    "%.3f vs %.3f" % (float(r8["legit_ser"]), float(r8["oma"])))
+chk("0.949 and 0.685 in tex", "0.949" in tex and "0.685" in tex,
+    "searched tex", needs_tex=True)
+
+# the Fig. 2 inset plots this ratio, so its stated span must hold
+sr = rows("sec_snr.csv")
+rt = [float(r["oma"]) / float(r["legit"]) for r in sr]
+chk("inset ratio spans 1.01 to 1.09", 1.005 < min(rt) and max(rt) < 1.095,
+    "%.3f to %.3f" % (min(rt), max(rt)))
+
+# the three secrets named in the setup
+chk("secret sizes UL=64, perm 64, pad 16",
+    all(t in tex for t in ["$UL=64$ key entries",
+                           "one permutation of $64$ positions",
+                           "$16$ pad\nbits per user"]),
+    "searched tex", needs_tex=True)
+
+# Fig. 5 shows the permutation curve tracking the mask curve
+sc = rows("sec_sens_cmp.csv")
+dv = max(abs(float(r["ser_mask"]) - float(r["ser_perm"])) for r in sc)
+chk("permutation tracks mask in Fig. 5", dv < 0.06, "max gap %.3f" % dv)
+
 # --- abstract ---------------------------------------------------------
 a = (tex.split(r"\begin{abstract}")[1].split(r"\end{abstract}")[0].strip()
      if HAVE_TEX else "")
