@@ -36,8 +36,19 @@ def f3(x: str) -> str:
     return "--" if math.isnan(v) else f"{v:.3f}"
 
 
-def cell(x: str, bold: bool) -> str:
-    s = f3(x)
+def f4(x: str) -> str:
+    """Four decimals, for a column whose values sit against the
+    random-guess level and would otherwise all print as 1.000 while the
+    body quotes their distance from it in units of 1e-4."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return "--"
+    return "--" if math.isnan(v) else f"{v:.4f}"
+
+
+def cell(x: str, bold: bool, wide: bool = False) -> str:
+    s = f4(x) if wide else f3(x)
     if s == "--":
         return "--"
     return rf"$\mathbf{{{s}}}$" if bold else f"${s}$"
@@ -59,6 +70,8 @@ def compare_table():
         b = r["scheme"] == "proposed"
         if r["scheme"] == "oma_plain" and f3(r["jam0_ser"]) == "--":
             r["jam0_ser"] = oma_jam
+        # four decimals would still print 1.0000 here, so the column
+        # stays at three and the caption names the chance level
         cells = [cell(r[k], b) for k in
                  ("legit_ser", "eve_out", "eve_in", "jam0_ser")]
         print(f"{NAME[r['scheme']]} & " + " & ".join(cells) + r" \\")
@@ -96,7 +109,8 @@ def refresh_tables():
         f = (lambda t: r"\mathbf{" + t + "}") if b else (lambda t: t)
         print(f"{name} & ${f(format(float(r['legit']), '.3f'))}$ & "
               f"${f(format(float(r['eve']), '.4f'))}$ & "
-              f"${f(format(float(r['entropy_bits']), '.1f'))}$~bits" + r" \\")
+              # the unit lives in the header, not in every cell
+              f"${f(format(float(r['entropy_bits']), '.1f'))}$" + r" \\")
     print()
     print("% Table: known plaintext across a refresh (from refresh_kpa.csv)")
     rows = {r["n_frames"]: r for r in csv.DictReader(open(DATA / "refresh_kpa.csv"))}
@@ -105,8 +119,10 @@ def refresh_tables():
           + " & ".join(f"${k}$" for k in keep) + r" \\")
     for lbl, key in (("Same block", "ser_same_block"),
                      ("Next block", "ser_next_block")):
+        w = ".4f" if key == "ser_next_block" else ".3f"
         print(f"{lbl} & "
-              + " & ".join(f"${float(rows[k][key]):.3f}$" for k in keep)
+              + " & ".join("$" + format(float(rows[k][key]), w) + "$"
+                           for k in keep)
               + r" \\")
 
 

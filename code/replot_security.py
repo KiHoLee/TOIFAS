@@ -34,21 +34,26 @@ FIG.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["DejaVu Serif", "Times New Roman"],
-    "font.size": 9,
-    "axes.labelsize": 9,
-    "legend.fontsize": 6.6,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
+    # The manuscript includes each result figure at 0.70 of a 3.455 in
+    # column while the canvas is 3.15 in, a printed scale of 0.768. Every
+    # size below is therefore pre-divided by that scale so the PRINTED
+    # sizes are 9 pt labels, 8 pt ticks and a 6.6 pt legend. Change the
+    # include width and these must change with it.
+    "font.size": 10.4,
+    "axes.labelsize": 10.4,
+    "legend.fontsize": 7.6,
+    "xtick.labelsize": 9.2,
+    "ytick.labelsize": 9.2,
     "axes.grid": True,
     "grid.linestyle": "--",
     "grid.linewidth": 0.4,
     "grid.alpha": 0.6,
-    "lines.linewidth": 1.3,
-    "lines.markersize": 4.5,
+    "lines.linewidth": 1.5,
+    "lines.markersize": 5.2,
     "figure.figsize": (3.15, 2.36),
     "pdf.fonttype": 42,
 })
-AXES_RECT = dict(left=0.185, right=0.965, top=0.955, bottom=0.195)
+AXES_RECT = dict(left=0.205, right=0.970, top=0.955, bottom=0.215)
 
 C_LEGIT = "#c0392b"
 C_EVE = "#2c5fa8"
@@ -178,12 +183,18 @@ def main_legit(snr_db="10"):
 def place_legend(ax, cands=("lower left", "center left", "center right",
                            "lower center", "upper right", "upper center",
                            "center", "lower right"),
-                 sizes=(6.6, 6.2, 5.8, 5.4, 5.0)):
+                 sizes=(7.6, 7.2, 6.8, 6.4, 6.0)):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
     five-entry legend of full scheme names has no clear corner at the
-    default size on every figure."""
+    default size on every figure.
+
+    The axes rectangle is applied first, because save() enforces the same
+    test after applying it. Scoring the default layout and then checking
+    a different one is how a placement that looked clear here failed
+    there."""
+    ax.figure.subplots_adjust(**AXES_RECT)
     best = None
     for size in sizes:
         for loc in cands:
@@ -227,8 +238,10 @@ def fig_snr():
                 label=LBL["eve_pub"])
     ax.semilogy(x, col(r, "eve_wrong"), color=C_EVE, marker="s", ls="--",
                 label=LBL["eve_key"])
-    ax.plot(x, col(r, "chance"), color=C_CH, ls="-.", lw=0.9,
-            label=LBL["chance"])
+    # the chance level lies within 3.5e-4 of the wrong-key curve, so it is
+    # drawn for reference but left out of the legend, which the caption
+    # names instead; five long entries leave this figure no clear corner
+    ax.plot(x, col(r, "chance"), color=C_CH, ls="-.", lw=0.9)
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
@@ -284,7 +297,7 @@ def fig_jam():
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
-    ax.set_ylim(0.8 * nojam, 1.02)
+    ax.set_ylim(0.0, 1.02)      # keep the reference line off the spine
     place_legend(ax)
     save(fig, "fig_sec_jam")
 
@@ -327,7 +340,7 @@ def fig_brute():
     ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
     ax.set_xlabel("Number of key guesses $K$")
     ax.set_ylabel("Eavesdropper SER")
-    ax.set_ylim(0.8 * legit, 1.05)
+    ax.set_ylim(0.0, 1.05)      # keep the reference line off the spine
     place_legend(ax)
     save(fig, "fig_sec_brute")
 
