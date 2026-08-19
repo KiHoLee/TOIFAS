@@ -18,16 +18,18 @@ Procedure, using nothing the threat model keeps secret:
   6. report the recovered-entry fraction and the eavesdropper SER, both
      WITHOUT ever using a known index
 
-Run under WSL. Prints a verdict; writes nothing to data/.
+Run under WSL. Writes data/cov_attack.csv so the manuscript sentence
+it supports is traceable to a stored artifact.
 """
 from __future__ import annotations
 import itertools
 import math
+from pathlib import Path
 import numpy as np
 import torch
 
 from sse_lib import rayleigh_gain, DEVICE
-from exp_full import get_model, hadamard, eval_ser_eve
+from exp_full import main_model, hadamard, eval_ser_eve
 
 
 def collect_frames(m, n, snr_db, seed):
@@ -94,18 +96,25 @@ def attack(m, snr_db, n_frames, seed):
 
 
 def main():
-    U, L = 4, 16
-    K0 = torch.tensor(hadamard(L)[1:U + 1], dtype=torch.float32)
-    m = get_model(iters=4000, freeze_W=K0)
+    import csv
+    m = main_model()
     m.eval()
     chance = 1.0 - (1.0 / m.vu) ** m.P
-    print(f"chance SER = {chance:.5f}, legitimate reference ~0.276")
+    print(f"chance SER = {chance:.5f} at the main configuration")
     print("ciphertext-only (NO known plaintext):")
+    rows = []
     for snr in (10.0, 20.0):
         for nf in (300, 1000, 10000):
             frac, ser = attack(m, snr, nf, seed=1234 + nf)
+            rows.append((snr, nf, "%.4f" % frac, "%.4f" % ser))
             print(f"  {snr:4.0f} dB  N={nf:6d}  "
                   f"key-entry recovery={frac:.3f}  eve SER={ser:.4f}")
+    out = Path(__file__).resolve().parents[1] / "data" / "cov_attack.csv"
+    with open(out, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["snr_db", "n_frames", "entry_recovery", "eve_ser"])
+        w.writerows(rows)
+    print("[csv]", out)
 
 
 if __name__ == "__main__":

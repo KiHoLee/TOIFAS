@@ -34,10 +34,10 @@ FIG.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["DejaVu Serif", "Times New Roman"],
-    # The manuscript includes each result figure at 0.70 of a 3.455 in
-    # column while the canvas is 3.15 in, a printed scale of 0.768. Every
+    # The manuscript includes each result figure at 0.62 of a 3.455 in
+    # column while the canvas is 3.15 in, a printed scale of 0.680. Every
     # size below is therefore pre-divided by that scale so the PRINTED
-    # sizes are 9 pt labels, 8 pt ticks and a 6.6 pt legend. Change the
+    # sizes are 8 pt labels, 7 pt ticks and a 5.5 pt legend. Change the
     # include width and these must change with it.
     "font.size": 10.4,
     "axes.labelsize": 10.4,
@@ -50,7 +50,7 @@ plt.rcParams.update({
     "grid.alpha": 0.6,
     "lines.linewidth": 1.5,
     "lines.markersize": 5.2,
-    "figure.figsize": (3.15, 2.36),
+    "figure.figsize": (3.15, 2.25),   # shorter canvas: same printed width and font size, less page height
     "pdf.fonttype": 42,
 })
 AXES_RECT = dict(left=0.205, right=0.970, top=0.955, bottom=0.215)
@@ -283,7 +283,7 @@ def fig_snr():
     ax.set_xlim(min(x), max(x))
     # most of a decade below the data leaves the lower-left genuinely
     # empty, which is what gives the four-entry legend a clear berth
-    ax.set_ylim(bottom=8e-4)
+    ax.set_ylim(bottom=2e-4)
     place_legend(ax)
     save(fig, "fig_sec_snr")
 
