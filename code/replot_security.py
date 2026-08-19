@@ -5,7 +5,7 @@ Label dictionary is fixed here and copied verbatim into tables and prose.
 
   fig_sec_snr.pdf     : legitimate and eavesdropper SER vs SNR (Fig. 2)
   fig_sec_keylen.pdf  : SER vs key length L (Fig. 3)
-  fig_sec_jam.pdf     : target-user SER vs JSR, four schemes (Fig. 4)
+  fig_sec_jam.pdf     : target-user SER vs JSR, four cases (Fig. 4)
   fig_sec_sens.pdf    : eavesdropper SER vs fraction of key held (Fig. 5)
   fig_sec_brute.pdf   : eavesdropper SER vs number of key guesses (Fig. 6)
   fig_sec_kpa.pdf     : eavesdropper SER vs known-plaintext frames (Fig. 7)
@@ -262,7 +262,9 @@ def fig_snr():
     r = load("sec_snr.csv")
     x = col(r, "snr_db")
     fig, ax = plt.subplots()
-    # legitimate and OMA coincide by construction; layered deliberately
+    # legitimate and the public-mask eavesdropper coincide by
+    # construction (same physical layer, public masks decode alike), so
+    # the pair is deliberately layered; OMA is separate at this frame
     ax.semilogy(x, col(r, "legit"), color=C_LEGIT, marker="o", ls="-",
                 markevery=(0, 3), label=LBL["legit"], **UNDER)
     ax.semilogy(x, col(r, "oma"), color=C_OMA, marker="^", ls=":",
@@ -304,18 +306,16 @@ def fig_keylen():
     ax.set_xlabel("Key length $L$")
     ax.set_ylabel("SER")
     ax.set_xscale("log", base=2)
-    # the curves sweep the upper-left to lower-right diagonal, leaving the
-    # lower-left corner empty
     place_legend(ax)
     save(fig, "fig_sec_keylen")
 
 
 def fig_jam():
-    """Target-user SER against JSR for four schemes. A linear axis is
-    used because the range spans less than one decade, where a log axis
-    would print wide minor tick labels that crowd out the y label. The
-    no-jammer reference is annotated on the line rather than listed in
-    the legend, so the legend never covers it."""
+    """Target-user SER against JSR in four cases. A linear axis is used
+    because the range spans less than one decade, where a log axis would
+    print wide minor tick labels that crowd out the y label. The
+    no-jammer reference is named in the caption rather than in the
+    legend, which keeps the legend four rows tall."""
     r = load("sec_jam_cmp.csv")
     x = col(r, "jsr_db")
     me = max(1, len(x) // 8)
@@ -354,7 +354,9 @@ def fig_sens():
             markevery=(1, 3), label=LBL["perm"], **OVER)
     ax.plot(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
             markevery=(2, 3), lw=1.2, mfc="none", label=LBL["pad"])
-    chance = 1.0 - (1.0 / 16.0) ** 4
+    # the chance level comes from the stored curve, not from a second
+    # copy of the configuration constants
+    chance = float(load("sec_snr.csv")[0]["chance"])
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
     # the narration reads these curves against the legitimate rate
     ax.axhline(main_legit(), color=C_OMA, ls=(0, (4, 2)), lw=0.9,
@@ -392,13 +394,14 @@ def fig_real():
     r = load("real_sec_ter.csv")
     x = col(r, "snr_db")
     fig, ax = plt.subplots()
-    # legitimate/OMA and insider/outsider coincide pairwise; layered
+    # insider and outsider still nearly coincide and are layered; the
+    # legitimate and OMA curves are separate at this frame
     ax.semilogy(x, col(r, "ter_legit"), color=C_LEGIT, marker="o", ls="-",
                 markevery=(0, 2), label=LBL["legit"], **UNDER)
     ax.semilogy(x, col(r, "ter_oma"), color=C_OMA, marker="^", ls=":",
                 markevery=(1, 2), label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "ter_insider"), color=C_PUB, marker="v", ls="-.",
-                markevery=(0, 2), lw=2.6, alpha=0.85, label=LBL["insider"])
+                markevery=(0, 2), label=LBL["insider"], **UNDER)
     ax.semilogy(x, col(r, "ter_eve"), color=C_EVE, marker="s", ls="--",
                 markevery=(1, 2), label=LBL["outsider"], **OVER)
     ax.set_xlabel("SNR (dB)")
@@ -414,8 +417,8 @@ def fig_kpa():
     comparison scheme."""
     r = load("kpa.csv")
     fig, ax = plt.subplots()
-    sty = {0.0: ("#c0392b", "o"), 10.0: ("#2c5fa8", "s"),
-           20.0: ("#16a085", "v")}
+    sty = {0.0: (C_LEGIT, "o"), 10.0: (C_EVE, "s"),
+           20.0: (C_PUB, "v")}
     for snr, (c, mk) in sty.items():
         rows = [row for row in r if float(row["snr_db"]) == snr]
         n = [float(row["n_frames"]) for row in rows]
