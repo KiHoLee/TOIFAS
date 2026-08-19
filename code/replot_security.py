@@ -91,6 +91,17 @@ def col(rows, k, f=float):
     return [f(r[k]) for r in rows]
 
 
+def _inflate(box, fig):
+    """Grow a bounding box by the marker radius plus the line width, in
+    pixels, so a marker whose CENTER clears the box cannot still touch
+    its frame."""
+    pad = (plt.rcParams["lines.markersize"] / 2.0
+           + plt.rcParams["lines.linewidth"]) * fig.dpi / 72.0
+    from matplotlib.transforms import Bbox
+    return Bbox.from_extents(box.x0 - pad, box.y0 - pad,
+                             box.x1 + pad, box.y1 + pad)
+
+
 def save(fig, name, insets=()):
     """Write the figure and assert that no axis label is clipped.
 
@@ -118,7 +129,13 @@ def save(fig, name, insets=()):
         # same discipline as the clipping guard above.
         leg = ax.get_legend()
         if leg is not None:
-            lb = leg.get_window_extent()
+            raw = leg.get_window_extent()
+            if (raw.x0 < fbox.x0 or raw.y0 < fbox.y0
+                    or raw.x1 > fbox.x1 or raw.y1 > fbox.y1):
+                raise RuntimeError(
+                    f"{name}: the legend box leaves the canvas "
+                    f"({raw} outside {fbox}); narrow or move it")
+            lb = _inflate(raw, fig)
             for line in ax.get_lines():
                 # full-span reference lines (axhline/axvline) carry axes-
                 # fraction endpoints [0,1]; they are not data curves and,
@@ -171,6 +188,10 @@ def save(fig, name, insets=()):
     print("[OK]", name)
 
 
+PL_CHOSEN = []      # sizes the sweep settled on, one per figure
+PL_FORCED = None    # set by main() on its second pass
+
+
 def main_legit(snr_db="10"):
     """The legitimate SER of the main configuration, read from the curve
     the main configuration produced rather than looked up by key length."""
@@ -180,10 +201,10 @@ def main_legit(snr_db="10"):
     raise KeyError("no %s dB row in sec_snr.csv" % snr_db)
 
 
-def place_legend(ax, cands=("lower left", "center left", "center right",
-                           "lower center", "upper right", "upper center",
-                           "center", "lower right"),
-                 sizes=(7.6, 7.2, 6.8, 6.4, 6.0)):
+def place_legend(ax, cands=("lower left", "upper left", "center left",
+                           "center right", "lower center", "upper right",
+                           "upper center", "center", "lower right"),
+                 sizes=(7.0,), ncol=1):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
@@ -193,14 +214,22 @@ def place_legend(ax, cands=("lower left", "center left", "center right",
     The axes rectangle is applied first, because save() enforces the same
     test after applying it. Scoring the default layout and then checking
     a different one is how a placement that looked clear here failed
-    there."""
+    there.
+
+    When PL_FORCED is set, only that size is tried: the driver runs every
+    figure once to learn the smallest size any of them needs, then reruns
+    them all at that one size so the legends print uniformly."""
     ax.figure.subplots_adjust(**AXES_RECT)
+    if PL_FORCED is not None:
+        sizes = (PL_FORCED,)
     best = None
     for size in sizes:
         for loc in cands:
-            leg = ax.legend(loc=loc, prop={"size": size})
+            leg = ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
+                            handlelength=1.4, columnspacing=0.9,
+                            handletextpad=0.5)
             ax.figure.canvas.draw()
-            lb = leg.get_window_extent()
+            lb = _inflate(leg.get_window_extent(), ax.figure)
             hits = 0
             for line in ax.get_lines():
                 xy = line.get_xydata()
@@ -218,9 +247,14 @@ def place_legend(ax, cands=("lower left", "center left", "center right",
             if best is None or hits < best[2]:
                 best = (loc, size, hits)
             if hits == 0:
-                ax.legend(loc=loc, prop={"size": size})
+                ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
+                          handlelength=1.4, columnspacing=0.9,
+                          handletextpad=0.5)
+                PL_CHOSEN.append(size)
                 return best
-    ax.legend(loc=best[0], prop={"size": best[1]})
+    ax.legend(loc=best[0], prop={"size": best[1]}, ncol=ncol,
+              handlelength=1.4, columnspacing=0.9, handletextpad=0.5)
+    PL_CHOSEN.append(best[1])
     return best
 
 
@@ -245,6 +279,9 @@ def fig_snr():
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
+    # most of a decade below the data leaves the lower-left genuinely
+    # empty, which is what gives the four-entry legend a clear berth
+    ax.set_ylim(bottom=8e-4)
     place_legend(ax)
     save(fig, "fig_sec_snr")
 
@@ -263,6 +300,7 @@ def fig_keylen():
                 marker="^", ls=":", label=LBL["oma"])
     ax.semilogy(x, col(r, "eve_ser"), color=C_EVE, marker="s", ls="--",
                 label=LBL["eve_key"])
+    ax.set_ylim(top=6.0)     # headroom above the flat eavesdropper curve
     ax.set_xlabel("Key length $L$")
     ax.set_ylabel("SER")
     ax.set_xscale("log", base=2)
@@ -292,8 +330,9 @@ def fig_jam():
     ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
             markevery=(me // 2, me), label=LBL["perm"] + ", blind", **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
-    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9,
-               label=LBL["nojam"])
+    # the unjammed reference is named in the caption rather than in the
+    # legend, which keeps the folded legend two rows tall
+    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9)
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
@@ -317,6 +356,9 @@ def fig_sens():
             markevery=(2, 3), lw=1.2, mfc="none", label=LBL["pad"])
     chance = 1.0 - (1.0 / 16.0) ** 4
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
+    # the narration reads these curves against the legitimate rate
+    ax.axhline(main_legit(), color=C_OMA, ls=(0, (4, 2)), lw=0.9,
+               label=LBL["legit"])
     ax.set_xlabel("Fraction of the key recovered")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xlim(0, 1)
@@ -337,7 +379,8 @@ def fig_brute():
     ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
                 label=LBL["mask"])
     legit = main_legit()
-    ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
+    ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
+               label=LBL["legit"])
     ax.set_xlabel("Number of key guesses $K$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_ylim(0.0, 1.05)      # keep the reference line off the spine
@@ -390,7 +433,8 @@ def fig_kpa():
     # in the main configuration, rather than the user-1 convention of the
     # scheme-comparison table
     legit = main_legit()
-    ax.axhline(legit, color=C_OMA, ls=":", lw=0.9, label=LBL["legit"])
+    ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
+               label=LBL["legit"])
     ax.set_xlabel("Known-plaintext frames $N$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xscale("log", base=2)
@@ -401,7 +445,7 @@ def fig_kpa():
     save(fig, "fig_sec_kpa")
 
 
-def main():
+def run_all():
     fig_snr()
     fig_keylen()
     fig_jam()
@@ -418,6 +462,21 @@ def main():
         fig_kpa()
     except FileNotFoundError:
         print("[skip] known-plaintext CSV not present yet")
+
+
+def main():
+    """Two passes: the first learns the smallest legend size any figure
+    needs, the second forces that one size everywhere so the legends
+    print uniformly, which the figure standard requires."""
+    global PL_FORCED
+    PL_FORCED = None
+    PL_CHOSEN.clear()
+    run_all()
+    if PL_CHOSEN:
+        PL_FORCED = min(PL_CHOSEN)
+        print("[uniform] legend size %.1f pt on every figure" % PL_FORCED)
+        PL_CHOSEN.clear()
+        run_all()
     print("[done] figures in", FIG)
 
 

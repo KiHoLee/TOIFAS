@@ -160,10 +160,10 @@ chk("ratio spans 1.32 to 1.54", round(min(rt), 2) == 1.32
     and round(max(rt), 2) == 1.54, "%.3f to %.3f" % (min(rt), max(rt)))
 
 # the three secrets named in the setup
-chk("secret sizes UL=256, perm 256, pad 16",
-    all(t in tex for t in ["$UL=256$ key entries",
-                           "one permutation of $256$ positions",
-                           "$16$ pad\nbits per user"]),
+chk("secret sizes: per-user direction, perm 256, pad 16",
+    all(t in tex for t in ["length-$64$ key direction per user",
+                           "one permutation of $256$",
+                           "$16$ pad bits per user"]),
     "searched tex", needs_tex=True)
 
 chk("no stale d=64 configuration in tex",
@@ -174,6 +174,47 @@ chk("no stale d=64 configuration in tex",
 sc = rows("sec_sens_cmp.csv")
 dv = max(abs(float(r["ser_mask"]) - float(r["ser_perm"])) for r in sc)
 chk("permutation tracks mask in Fig. 5", dv < 0.06, "max gap %.3f" % dv)
+
+# --- the audit round's corrected quantities ---------------------------
+mf = {r["family"]: r for r in rows("sec_maskfam.csv")}
+fam_pct = (float(mf["random"]["legit_ser"])
+           / float(mf["hadamard"]["legit_ser"]) - 1) * 100
+chk("continuous family 29 percent worse", round(fam_pct) == 29,
+    "%.1f percent" % fam_pct)
+chk("no stale 2.5 factor in tex", "factor of $2.5$" not in tex,
+    "searched tex", needs_tex=True)
+
+sc2 = rows("sec_sens_cmp.csv")
+worst04 = min(min(float(r["ser_mask"]), float(r["ser_perm"]),
+                  float(r["ser_pad"])) for r in sc2
+              if float(r["frac"]) <= 0.4)
+chk("all three above 0.95 to 40 percent of key", worst04 > 0.95,
+    "min %.4f" % worst04)
+
+rf = rows("refresh.csv")
+res = max(1 - float(r["eve_invariant"]) for r in rf)
+chk("refresh residual below 2.4e-3", res < 2.4e-3, "max %.2e" % res)
+
+rk = rows("refresh_kpa.csv")
+nb = max(0.9999847412 - float(r["ser_next_block"]) for r in rk)
+chk("next block within 6e-4 of chance", nb < 6e-4, "max %.2e" % nb)
+
+bc = rows("sec_brute_cmp.csv")
+pm = min(float(r["ser_perm"]) for r in bc)
+chk("permutation floor 0.9996", pm > 0.9996, "min %.5f" % pm)
+
+md = {r["family"]: r for r in rows("maskdegen.csv")}
+ks = [int(x) for x in md["learned"]["support99_per_key"].split("/")]
+chk("learned keys degenerate: 5 to 8 of 64 entries",
+    min(ks) == 5 and max(ks) == 8 and int(md["learned"]["L"]) == 64,
+    md["learned"]["support99_per_key"])
+chk("learned support overlap 0.10",
+    round(float(md["learned"]["mean_overlap"]), 2) == 0.10,
+    md["learned"]["mean_overlap"])
+chk("degeneracy numbers in tex",
+    "$5$ to $8$ of the $64$ entries" in tex and "overlap of\n$0.10$" in tex
+    or "$5$ to $8$ of the $64$ entries" in tex and "overlap of $0.10$" in tex,
+    "searched tex", needs_tex=True)
 
 # --- abstract ---------------------------------------------------------
 a = (tex.split(r"\begin{abstract}")[1].split(r"\end{abstract}")[0].strip()

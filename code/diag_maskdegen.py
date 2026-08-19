@@ -31,7 +31,7 @@ def support99(w):
     return set(order[:k].tolist()), k
 
 
-def describe(name, W):
+def describe(name, W, rows=None):
     L = W.shape[1]
     sups, ks = [], []
     for u in range(W.shape[0]):
@@ -43,17 +43,33 @@ def describe(name, W):
         for j in range(i + 1, len(sups)):
             ov.append(len(sups[i] & sups[j]) / max(1, min(len(sups[i]),
                                                           len(sups[j]))))
+    mo = sum(ov) / len(ov)
     print("%-14s L=%3d  99%%-energy entries per key: %s  "
-          "mean pairwise support overlap %.2f"
-          % (name, L, ks, sum(ov) / len(ov)))
+          "mean pairwise support overlap %.2f" % (name, L, ks, mo))
+    if rows is not None:
+        rows.append([name, L, "/".join(str(k) for k in ks), "%.4f" % mo])
+
+
+def write_rows(rows):
+    """Store the measurement so the manuscript sentence it justifies is
+    traceable to an artifact in data/ like every other quoted number."""
+    import csv
+    out = Path(__file__).resolve().parents[1] / "data" / "maskdegen.csv"
+    with open(out, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["family", "L", "support99_per_key", "mean_overlap"])
+        w.writerows(rows)
+    print("[csv]", out)
 
 
 def main():
     print("main configuration d=%d" % MAIN_D)
+    rows = []
     m_free = get_model(iters=4000)            # keys learned, nothing frozen
-    describe("learned", m_free.masks().detach().cpu())
+    describe("learned", m_free.masks().detach().cpu(), rows)
     m_fix = main_model()
-    describe("Walsh-Hadamard", m_fix.masks().detach().cpu())
+    describe("Walsh-Hadamard", m_fix.masks().detach().cpu(), rows)
+    write_rows(rows)
     print()
     print("A degenerate key set shows few entries per key and near-zero")
     print("overlap; a dense one shows most entries and overlap near one.")
