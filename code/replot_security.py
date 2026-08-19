@@ -34,10 +34,10 @@ FIG.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["DejaVu Serif", "Times New Roman"],
-    # The manuscript includes each result figure at 0.62 of a 3.455 in
-    # column while the canvas is 3.15 in, a printed scale of 0.680. Every
+    # The manuscript includes each result figure at 0.68 of a 3.455 in
+    # column while the canvas is 3.15 in, a printed scale of 0.746. Every
     # size below is therefore pre-divided by that scale so the PRINTED
-    # sizes are 8 pt labels, 7 pt ticks and a 5.5 pt legend. Change the
+    # sizes are 8 pt labels, 7 pt ticks and a 5.2 pt legend. Change the
     # include width and these must change with it.
     "font.size": 10.4,
     "axes.labelsize": 10.4,
