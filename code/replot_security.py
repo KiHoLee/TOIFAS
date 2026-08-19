@@ -34,16 +34,16 @@ FIG.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["DejaVu Serif", "Times New Roman"],
-    # The manuscript includes each result figure at 0.80 of a 3.455 in
-    # column while the canvas is 3.15 in, a printed scale of 0.878. Every
+    # The manuscript includes each result figure at 0.85 of a 3.455 in
+    # column while the canvas is 3.15 in, a printed scale of 0.933. Every
     # size below is therefore pre-divided by that scale so the PRINTED
     # sizes are 9 pt labels, 8 pt ticks and a 6.6 pt legend. Change the
     # include width and these must change with it.
-    "font.size": 10.3,
-    "axes.labelsize": 10.3,
-    "legend.fontsize": 7.5,
-    "xtick.labelsize": 9.1,
-    "ytick.labelsize": 9.1,
+    "font.size": 9.7,
+    "axes.labelsize": 9.7,
+    "legend.fontsize": 7.1,
+    "xtick.labelsize": 8.6,
+    "ytick.labelsize": 8.6,
     "axes.grid": True,
     "grid.linestyle": "--",
     "grid.linewidth": 0.4,
@@ -204,7 +204,7 @@ def main_legit(snr_db="10"):
 def place_legend(ax, cands=("lower left", "upper left", "center left",
                            "center right", "lower center", "upper right",
                            "upper center", "center", "lower right"),
-                 sizes=(7.5, 7.2, 7.0), ncol=1):
+                 sizes=(7.1, 6.8, 6.6), ncol=1):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
@@ -227,7 +227,7 @@ def place_legend(ax, cands=("lower left", "upper left", "center left",
         for loc in cands:
             leg = ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
                             handlelength=1.4, columnspacing=0.9,
-                            handletextpad=0.5)
+                            handletextpad=0.5, borderaxespad=0.55)
             ax.figure.canvas.draw()
             lb = _inflate(leg.get_window_extent(), ax.figure)
             hits = 0
@@ -249,11 +249,12 @@ def place_legend(ax, cands=("lower left", "upper left", "center left",
             if hits == 0:
                 ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
                           handlelength=1.4, columnspacing=0.9,
-                          handletextpad=0.5)
+                          handletextpad=0.5, borderaxespad=0.55)
                 PL_CHOSEN.append(size)
                 return best
     ax.legend(loc=best[0], prop={"size": best[1]}, ncol=ncol,
-              handlelength=1.4, columnspacing=0.9, handletextpad=0.5)
+              handlelength=1.4, columnspacing=0.9, handletextpad=0.5,
+              borderaxespad=0.55)
     PL_CHOSEN.append(best[1])
     return best
 
