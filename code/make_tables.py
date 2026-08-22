@@ -91,16 +91,6 @@ def maskfam_table():
         print(f"{name} & " + " & ".join(cells) + r" \\")
 
 
-def real_table():
-    print("% Table: headline recovery (from real_sec_stats.json)")
-    st = json.loads((DATA / "real_sec_stats.json").read_text())
-    rec = st["recovery"]
-    snrs = sorted(rec, key=float)
-    for key in ("legit", "oma", "insider", "eve"):
-        cells = " & ".join(f"${rec[s][key]:.3f}$" for s in snrs)
-        print(f"{RECEIVER[key]} & {cells}" + r" \\")
-
-
 def refresh_tables():
     print("% Table: key refresh (from refresh_summary.csv)")
     for r in csv.DictReader(open(DATA / "refresh_summary.csv")):
@@ -111,23 +101,7 @@ def refresh_tables():
               f"${f(format(float(r['eve']), '.4f'))}$ & "
               # the unit lives in the header, not in every cell
               f"${f(format(float(r['entropy_bits']), '.1f'))}$" + r" \\")
-    print()
-    print("% Table: known plaintext across a refresh (from refresh_kpa.csv)")
-    rows = {r["n_frames"]: r for r in csv.DictReader(open(DATA / "refresh_kpa.csv"))}
-    keep = ["2", "8", "64"]
-    print("Frames used by the attacker & "
-          + " & ".join(f"${k}$" for k in keep) + r" \\")
-    for lbl, key in (("Same block", "ser_same_block"),
-                     ("Next block", "ser_next_block")):
-        w = ".4f" if key == "ser_next_block" else ".3f"
-        print(f"{lbl} & "
-              + " & ".join("$" + format(float(rows[k][key]), w) + "$"
-                           for k in keep)
-              + r" \\")
-
-
 if __name__ == "__main__":
     compare_table(); print()
     maskfam_table(); print()
-    real_table(); print()
     refresh_tables()
