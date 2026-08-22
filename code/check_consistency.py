@@ -212,9 +212,43 @@ chk("learned support overlap 0.10",
     round(float(md["learned"]["mean_overlap"]), 2) == 0.10,
     md["learned"]["mean_overlap"])
 chk("degeneracy numbers in tex",
-    "$5$ to $8$ of the $64$ entries" in tex and "overlap of\n$0.10$" in tex
-    or "$5$ to $8$ of the $64$ entries" in tex and "overlap of $0.10$" in tex,
+    "$5$ to $8$ of the $64$ entries" in tex
+    and "overlapping by $0.10$ on average over user pairs" in " ".join(tex.split()),
     "searched tex", needs_tex=True)
+
+# --- key-length sweep floor ------------------------------------------
+# The eavesdropper column is an average over eight substitute-key draws,
+# so the quoted floor must track the data and not one lucky draw.
+kl = rows("sec_keylen.csv")
+floor = min(float(r["eve_ser"]) for r in kl)
+chk("eavesdropper floor over key length", abs(floor - 0.9984) < 5e-4,
+    "%.6f" % floor)
+if HAVE_TEX:
+    chk("quoted eavesdropper floor in tex", "$0.9984$" in tex,
+        "searched tex", needs_tex=True)
+
+
+# --- tables against their generator -----------------------------------
+# Every printed table cell must be the one make_tables.py derives from
+# data/, so a rerun that moves a number cannot leave the manuscript behind.
+if HAVE_TEX:
+    import io
+    import contextlib
+    import make_tables
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        make_tables.compare_table()
+        make_tables.maskfam_table()
+        make_tables.refresh_tables()
+    rows = [r.strip() for r in buf.getvalue().split("\n")
+            if r.rstrip().endswith(r"\\")]
+    flat = " ".join(tex.split())
+    lost = [r for r in rows if " ".join(r.split()) not in flat]
+    chk("table rows match the generator", not lost,
+        "%d rows, %d missing" % (len(rows), len(lost)), needs_tex=True)
+    for r in lost:
+        print("      missing:", r[:78])
+
 
 # --- abstract ---------------------------------------------------------
 a = (tex.split(r"\begin{abstract}")[1].split(r"\end{abstract}")[0].strip()

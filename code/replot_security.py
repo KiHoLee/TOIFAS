@@ -34,16 +34,17 @@ FIG.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["DejaVu Serif", "Times New Roman"],
-    # The manuscript includes each result figure at 0.70 of a 3.455 in
-    # column while the canvas is 3.15 in, a printed scale of 0.768. Every
+    # The manuscript includes each result figure at 0.74 of a 3.455 in
+    # column while the canvas is 3.15 in, a printed scale of 0.812. Every
     # size below is therefore pre-divided by that scale so the PRINTED
-    # sizes are 8 pt labels, 7 pt ticks and a 5.8 pt legend. Change the
-    # include width and these must change with it.
-    "font.size": 10.4,
-    "axes.labelsize": 10.4,
-    "legend.fontsize": 7.6,
-    "xtick.labelsize": 9.2,
-    "ytick.labelsize": 9.2,
+    # sizes are 8 pt labels, 7.6 pt ticks and a 6 pt legend at the
+    # smallest rung. Change the include width and these must change
+    # with it.
+    "font.size": 9.9,
+    "axes.labelsize": 9.9,
+    "legend.fontsize": 9.2,
+    "xtick.labelsize": 9.4,
+    "ytick.labelsize": 9.4,
     "axes.grid": True,
     "grid.linestyle": "--",
     "grid.linewidth": 0.4,
@@ -67,7 +68,7 @@ LBL = {
     "legit": "Legitimate",
     "oma": "OMA",
     "eve_pub": "Eavesdropper, public masks",
-    "eve_key": "Eavesdropper, wrong key",
+    "eve_key": "Eavesdropper",     # the wrong-key condition is in the caption
     "chance": "Random guess",
     "nojam": "No jammer",
     "mask": "Keyed masking",
@@ -204,7 +205,7 @@ def main_legit(snr_db="10"):
 def place_legend(ax, cands=("lower left", "upper left", "center left",
                            "center right", "lower center", "upper right",
                            "upper center", "center", "lower right"),
-                 sizes=(7.6, 7.2, 6.8, 6.4, 6.0), ncol=1):
+                 sizes=(9.2, 8.8, 8.4, 8.0, 7.6, 7.2), ncol=1):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
@@ -227,7 +228,8 @@ def place_legend(ax, cands=("lower left", "upper left", "center left",
         for loc in cands:
             leg = ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
                             handlelength=1.4, columnspacing=0.9,
-                            handletextpad=0.5, borderaxespad=0.55)
+                            handletextpad=0.5, borderaxespad=0.55,
+                            framealpha=1.0)
             ax.figure.canvas.draw()
             lb = _inflate(leg.get_window_extent(), ax.figure)
             hits = 0
@@ -249,12 +251,13 @@ def place_legend(ax, cands=("lower left", "upper left", "center left",
             if hits == 0:
                 ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
                           handlelength=1.4, columnspacing=0.9,
-                          handletextpad=0.5, borderaxespad=0.55)
+                          handletextpad=0.5, borderaxespad=0.55,
+                            framealpha=1.0)
                 PL_CHOSEN.append(size)
                 return best
     ax.legend(loc=best[0], prop={"size": best[1]}, ncol=ncol,
               handlelength=1.4, columnspacing=0.9, handletextpad=0.5,
-              borderaxespad=0.55)
+              borderaxespad=0.55, framealpha=1.0)
     PL_CHOSEN.append(best[1])
     return best
 
@@ -303,7 +306,7 @@ def fig_keylen():
                 marker="^", ls=":", label=LBL["oma"])
     ax.semilogy(x, col(r, "eve_ser"), color=C_EVE, marker="s", ls="--",
                 label=LBL["eve_key"])
-    ax.set_ylim(top=6.0)     # headroom above the flat eavesdropper curve
+    ax.set_ylim(top=22.0)    # headroom above the flat eavesdropper curve
     ax.set_xlabel("Key length $L$")
     ax.set_ylabel("SER")
     ax.set_xscale("log", base=2)
@@ -322,18 +325,23 @@ def fig_jam():
     me = max(1, len(x) // 8)
     fig, ax = plt.subplots()
     ax.plot(x, col(r, "matched"), color=C_MATCH, marker="P", ls="--",
-            markevery=me, label=LBL["mask"] + ", matched")
+            markevery=me, label="Public masks")
     ax.plot(x, col(r, "oma_targeted"), color=C_PUB, marker="^", ls=":",
-            markevery=me, label=LBL["oma"] + ", targeted")
+            markevery=me, label=LBL["oma"])
     # the two blind curves agree to 0.002; deliberate layering
     ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-",
-            markevery=(0, me), label=LBL["mask"] + ", blind", **UNDER)
+            markevery=(0, me), label=LBL["mask"], **UNDER)
     ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
-            markevery=(me // 2, me), label=LBL["perm"] + ", blind", **OVER)
+            markevery=(me // 2, me), label=LBL["perm"], **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
     # the unjammed reference is named in the caption rather than in the
     # legend, which keeps the folded legend two rows tall
-    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9)
+    # Behind the legend rather than through it. The placement guard skips
+    # axis-spanning lines, so it cannot move the legend off this one, and
+    # a reference drawn along the legend frame reads as part of the box.
+    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9, zorder=0)
+    ax.set_ylim(-0.42, 1.05)
+    ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))

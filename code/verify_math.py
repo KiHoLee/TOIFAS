@@ -188,6 +188,100 @@ def v5_matched_jammer_concentrates():
     return ok
 
 
+def v6_coded_oma_outage():
+    """The genie reference the manuscript concedes: an OMA user coding at
+    the Rayleigh outage limit of its own allocation.
+
+    The user owns L = d/U real dimensions, so d/(2U) complex uses, and
+    carries log2(V) bits. Its per-dimension SNR is the frame SNR, the
+    same convention snr_to_sigma2 sets. Outage is the probability that
+    the instantaneous mutual information falls below that rate."""
+    import math
+    U, d, V = 4, 256, 65536
+    for snr_db in (10.0,):
+        g = 10.0 ** (snr_db / 10.0)
+        uses = d / (2.0 * U)                  # complex channel uses
+        rate = math.log2(V) / uses            # bits per complex use
+        thr = (2.0 ** rate - 1.0) / g         # |h|^2 threshold
+        pout = 1.0 - math.exp(-thr)           # |h|^2 ~ Exp(1)
+        print(f"V6 coded-OMA outage @ {snr_db:.0f} dB: {pout:.4f} "
+              f"(rate {rate:.3f} bit/use)")
+        ROWS.append(("V6 coded-OMA outage @ %.0f dB" % snr_db,
+                     "%.4f" % pout, "%.6f" % pout, "0", "0", "REFERENCE"))
+    return True
+
+
+def v7_symbolic_identities():
+    """Symbolic verification of the three algebraic identities. Monte
+    Carlo cannot check an identity, only an instance of it."""
+    try:
+        import sympy as sp
+    except ImportError:
+        print("V7 symbolic: sympy not installed, SKIPPED")
+        ROWS.append(("V7 symbolic identities", "-", "-", "-", "-", "SKIPPED"))
+        return True
+    ok = True
+
+    # refresh entropy: L sign bits, an entry permutation, a user permutation
+    L, Uu = 64, 4
+    ent = sp.Integer(L) + sp.log(sp.factorial(L), 2) + sp.log(sp.factorial(Uu), 2)
+    ok &= abs(float(ent) - 364.6) < 0.05
+    print("V7a refresh entropy %.3f bits/block" % float(ent))
+
+    # fixed-key entropy: ordered choices of U of the L-1 non-constant rows
+    fixed = sp.log(sp.factorial(L - 1) / sp.factorial(L - 1 - Uu), 2)
+    ok &= abs(float(fixed) - 23.8) < 0.05
+    ok &= sp.factorial(L - 1) / sp.factorial(L - 1 - Uu) == 14295960
+    print("V7b fixed-key entropy %.3f bits, %d choices"
+          % (float(fixed), sp.factorial(L - 1) / sp.factorial(L - 1 - Uu)))
+
+    # the termwise Hadamard identity behind eq:hadamard
+    n = 4
+    e = sp.Matrix(sp.symbols("e1:%d" % (n + 1)))
+    m = sp.Matrix(sp.symbols("m1:%d" % (n + 1)))
+    f = sp.Matrix(sp.symbols("f1:%d" % (n + 1)))
+    lhs = sum((sp.matrix_multiply_elementwise(e, m))[k] *
+              (sp.matrix_multiply_elementwise(f, m))[k] for k in range(n))
+    rhs = (e.T * sp.diag(*[m[k] ** 2 for k in range(n)]) * f)[0]
+    ok &= sp.simplify(lhs - rhs) == 0
+    print("V7c (e*m).(f*m) == e^T diag(m^2) f :",
+          sp.simplify(lhs - rhs) == 0)
+
+    ROWS.append(("V7 symbolic identities", "exact", "exact", "0", "0",
+                 "PASS" if ok else "FAIL"))
+    return ok
+
+
+def v8_cross_period_terms():
+    """Proposition 2 keeps only the diagonal of the jammer projection.
+    The periodic key makes entries one period apart identical, so the
+    cross-period terms do not vanish termwise. They are zero mean over
+    the codebook, which is the claim the proof rests on."""
+    import math
+    import torch
+    from exp_full import main_model
+    torch.manual_seed(7)
+    m = main_model()
+    Bn = m.unit_codebook().detach().cpu()
+    pat = m.masks().detach().cpu()[0]
+    L, P, d = m.L, m.P, m.d
+    rel = []
+    for _ in range(300):
+        w = torch.randn(d)
+        w /= w.norm()
+        i = torch.randint(m.vu, (P,))
+        e = (Bn[i] / math.sqrt(P)).reshape(-1)
+        a = (w * e).reshape(P, L) * pat[None, :]
+        diag = float((a ** 2).sum())
+        rel.append((float((a.sum(0) ** 2).sum()) - diag) / diag)
+    mean = sum(rel) / len(rel)
+    ok = abs(mean) < 0.01
+    print("V8 cross-period remainder, mean %+.4f of the retained term" % mean)
+    ROWS.append(("V8 cross-period remainder", "0.0", "%.6f" % mean,
+                 "%.6f" % abs(mean), "0.01", "PASS" if ok else "FAIL"))
+    return ok
+
+
 def main():
     print(f"config d={D} U={U} V={V}\n")
     results = {
@@ -196,6 +290,9 @@ def main():
         "V3": v3_leakage_vs_correlation(),
         "V4": v4_blind_jammer_spread(),
         "V5": v5_matched_jammer_concentrates(),
+        "V6": v6_coded_oma_outage(),
+        "V7": v7_symbolic_identities(),
+        "V8": v8_cross_period_terms(),
     }
     print("\nsummary:", {k: ("PASS" if v else "FAIL") for k, v in results.items()})
     print("ALL PASS" if all(results.values()) else "SOME FAILED")

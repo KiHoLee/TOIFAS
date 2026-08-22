@@ -62,6 +62,15 @@ Seeds are fixed: training 1, evaluation 777, attacker key guess
 comparison 11, key refresh 5150. Re-running reproduces the released CSV
 files.
 
+## Conventions
+
+Flat Rayleigh fading, one gain per user per frame, with unit mean power.
+A frame carries unit energy, so the SNR in decibels is the frame energy
+over the total noise across all `d` real dimensions, and every scheme in
+a comparison spends the same energy, bandwidth and rate. The
+jamming-to-signal ratio is the jammer energy over the same frame energy.
+Logarithms in an entropy or an information rate are base two.
+
 ## Figure and table map
 
 | Artifact | Script | Data |
@@ -77,6 +86,11 @@ files.
 | Key family table | `exp_full.stage_D` | `sec_maskfam.csv`, `sec_regjam.csv` |
 | Headline recovery table | `exp_real_sec` | `real_sec_stats.json` |
 | Key refresh tables | `exp_refresh` | `refresh_summary.csv`, `refresh_kpa.csv` |
+| Information-theoretic leakage | `exp_infotheory` | `infotheory.csv` |
+| Semantic similarity | `exp_semantic` | `semantic.csv` |
+| Load and channel-estimate sweeps | `exp_users_csi` | `users.csv`, `csi.csv` |
+| Permutation-variant check | `exp_full.stage_M` | `perm_variant.csv` |
+| Closed-form and symbolic checks | `verify_math` | `verify_math.csv` |
 
 ## Security scope
 

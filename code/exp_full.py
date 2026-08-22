@@ -288,8 +288,15 @@ def stage_B():
     for d in [32, 48, 64, 80, 96, 128, 192, 256]:
         m = main_model(d=d)          # same structured family as Fig. 2
         lg = eval_ser_sse(m, [10.0], frames=500_000)[0]
-        ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
-        ev = eval_ser_eve(m, ew, [10.0], frames=500_000)[0]
+        # Proposition 1 is a statement about the substitute-key ENSEMBLE, so
+        # the eavesdropper is averaged over eight draws. A single draw makes
+        # the curve jump wherever one key happens to land luckily, which is
+        # a property of that draw and not of the key length.
+        ev = sum(eval_ser_eve(
+                    m, eve_wrong_mask(m.users, m.L,
+                                      seed=20260813 + 101 * k).to(DEVICE),
+                    [10.0], frames=500_000 // 8)[0]
+                 for k in range(8)) / 8.0
         xc = mean_abs_xcorr(m.masks().detach())
         oma = oma_ser_keylen(m.L, 10.0)
         rows.append((m.L, d, lg, ev, xc, oma))
@@ -735,12 +742,15 @@ def oma_ser_jammed(snr_db, jsr_db_list, bits=16, U=4, d=256, n_grid=4096):
     """OMA under a jammer that concentrates on the victim's slots.
 
     An OMA user occupies L = d/U exclusive real dimensions that are
-    public, and drives its 16 index bits on 16 of them with the whole
-    allocation energy, an amplitude gain of sqrt(L/bits) per bit. A
-    jammer needs no key to put all of its power on those same public
-    dimensions. With unit energy per real dimension and a total jammer
-    energy of rho times the frame energy, concentrating on bits of the d
-    dimensions gives a per-dimension jammer variance of (d/bits)*rho.
+    public, and repeats each of its 16 index bits over L/bits of them,
+    combining coherently for an amplitude gain of sqrt(L/bits) per bit.
+    This spread allocation is the configuration that serves the OMA user
+    best under a jammer, so it is the one the comparison grants it. A
+    jammer needs no key to find those public dimensions, but it must
+    cover all L of them. With unit energy per real dimension and a total
+    jammer energy of rho times the frame energy, spreading over L of the
+    d dimensions gives a per-dimension jammer variance of (d/L)*rho,
+    which is U*rho.
 
     The jammer reaches the victim through its own Rayleigh channel, the
     same convention eval_scheme uses for every simulated scheme, so the
@@ -757,11 +767,33 @@ def oma_ser_jammed(snr_db, jsr_db_list, bits=16, U=4, d=256, n_grid=4096):
     out = []
     for jsr_db in jsr_db_list:
         rho = 10.0 ** (jsr_db / 10.0)
-        var = (1.0 / snr + (d / bits) * rho * hj2)[None, :]        # (1,n)
+        var = (1.0 / snr + U * rho * hj2)[None, :]                 # (1,n)
         arg = (h * gain / var.sqrt()).clamp(0, 38)
         pe = 0.5 * torch.erfc(arg / math.sqrt(2.0))       # per-bit error
         out.append(float((1.0 - (1.0 - pe) ** bits).mean()))
     return out
+
+
+def stage_M():
+    """Why the permutation-key scheme shares one permutation.
+
+    The manuscript asserts that a per-user permutation breaks the trained
+    separation, which is the reason the compared scheme is granted a
+    shared one. That assertion needs a measurement of its own.
+    """
+    print("[M] shared against per-user permutation ...")
+    m = main_model()
+    d = m.P * m.L
+    F = 200_000
+    g = torch.Generator().manual_seed(11)
+    shared = torch.randperm(d, generator=g)[None].repeat(m.users, 1)
+    peruser = torch.stack([torch.randperm(d, generator=g)
+                           for _ in range(m.users)])
+    rows = [("shared", eval_scheme(m, 10.0, F, perms=shared)),
+            ("per_user", eval_scheme(m, 10.0, F, perms=peruser))]
+    for k, v in rows:
+        print("   %-9s legit=%.4f" % (k, v))
+    write_csv(DATA / "perm_variant.csv", ["variant", "legit_ser"], rows)
 
 
 def stage_L():
