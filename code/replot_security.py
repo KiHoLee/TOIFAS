@@ -276,8 +276,10 @@ def fig_snr():
     ax.semilogy(x, col(r, "eve_public"), color=C_PUB, marker="v",
                 ls="none", markevery=(2, 3), markerfacecolor="none",
                 label=LBL["eve_pub"])
+    # this figure carries two eavesdroppers, so the bare label of the
+    # key-length figure would not tell them apart
     ax.semilogy(x, col(r, "eve_wrong"), color=C_EVE, marker="s", ls="--",
-                label=LBL["eve_key"])
+                label="Eavesdropper, keyed")
     # the chance level lies within 3.5e-4 of the wrong-key curve, so it is
     # drawn for reference but left out of the legend, which the caption
     # names instead; five long entries leave this figure no clear corner
