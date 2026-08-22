@@ -1,0 +1,11 @@
+impairment,level,legit_ser
+amplitude_nmse,0,0.053300
+amplitude_nmse,0.001,0.052325
+amplitude_nmse,0.01,0.053213
+amplitude_nmse,0.03,0.052790
+amplitude_nmse,0.1,0.052969
+phase_rms_rad,0,0.053000
+phase_rms_rad,0.02,0.052800
+phase_rms_rad,0.05,0.052500
+phase_rms_rad,0.1,0.053800
+phase_rms_rad,0.2,0.056600

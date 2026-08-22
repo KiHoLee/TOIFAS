@@ -34,16 +34,16 @@ FIG.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["DejaVu Serif", "Times New Roman"],
-    # The manuscript includes each result figure at 0.85 of a 3.455 in
-    # column while the canvas is 3.15 in, a printed scale of 0.933. Every
+    # The manuscript includes each result figure at 0.70 of a 3.455 in
+    # column while the canvas is 3.15 in, a printed scale of 0.768. Every
     # size below is therefore pre-divided by that scale so the PRINTED
-    # sizes are 9 pt labels, 8 pt ticks and a 6.6 pt legend. Change the
+    # sizes are 8 pt labels, 7 pt ticks and a 5.8 pt legend. Change the
     # include width and these must change with it.
-    "font.size": 9.7,
-    "axes.labelsize": 9.7,
-    "legend.fontsize": 7.1,
-    "xtick.labelsize": 8.6,
-    "ytick.labelsize": 8.6,
+    "font.size": 10.4,
+    "axes.labelsize": 10.4,
+    "legend.fontsize": 7.6,
+    "xtick.labelsize": 9.2,
+    "ytick.labelsize": 9.2,
     "axes.grid": True,
     "grid.linestyle": "--",
     "grid.linewidth": 0.4,
@@ -53,7 +53,7 @@ plt.rcParams.update({
     "figure.figsize": (3.15, 2.25),   # shorter canvas: same printed width and font size, less page height
     "pdf.fonttype": 42,
 })
-AXES_RECT = dict(left=0.205, right=0.970, top=0.955, bottom=0.215)
+AXES_RECT = dict(left=0.215, right=0.970, top=0.955, bottom=0.225)
 
 C_LEGIT = "#c0392b"
 C_EVE = "#2c5fa8"
@@ -204,7 +204,7 @@ def main_legit(snr_db="10"):
 def place_legend(ax, cands=("lower left", "upper left", "center left",
                            "center right", "lower center", "upper right",
                            "upper center", "center", "lower right"),
-                 sizes=(7.1, 6.8, 6.6), ncol=1):
+                 sizes=(7.6, 7.2, 6.8, 6.4, 6.0), ncol=1):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
