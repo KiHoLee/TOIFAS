@@ -90,6 +90,8 @@ Logarithms in an entropy or an information rate are base two.
 | Semantic similarity | `exp_semantic` | `semantic.csv` |
 | Load and channel-estimate sweeps | `exp_users_csi` | `users.csv`, `csi.csv` |
 | Permutation-variant check | `exp_full.stage_M` | `perm_variant.csv` |
+
+Run one stage on its own with `python code/exp_full.py stage_B`, or the whole chain with no argument.
 | Closed-form and symbolic checks | `verify_math` | `verify_math.csv` |
 
 ## Security scope

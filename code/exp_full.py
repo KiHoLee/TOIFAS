@@ -18,6 +18,7 @@ Experiment scripts write CSV only, never draw. Fixed seeds.
 """
 from __future__ import annotations
 import math
+import sys
 import numpy as np
 import torch
 
@@ -854,19 +855,27 @@ def stage_L_gap(rows):
           f"over SER {lo:.3f} to {hi:.3f}")
 
 
-def main():
+CHAIN = ["stage_A", "stage_B", "stage_C", "stage_D", "stage_E", "stage_F",
+         "stage_I", "stage_J", "stage_L", "stage_M"]
+
+
+def main(names=None):
+    """Run the named stages, or the whole chain when none are named.
+
+    The README maps every figure and table to its stage, so a reader
+    reproducing one figure runs that stage alone:
+        python code/exp_full.py stage_B
+    """
     print(f"device={DEVICE}")
-    stage_A()
-    stage_B()
-    stage_C()
-    stage_D()
-    stage_E()
-    stage_F()
-    stage_I()
-    stage_J()
-    stage_L()
-    print("[done] full-scale security CSVs in", DATA)
+    todo = names or CHAIN
+    unknown = [n for n in todo if n not in CHAIN]
+    if unknown:
+        raise SystemExit("unknown stage(s): %s\nknown: %s"
+                         % (", ".join(unknown), ", ".join(CHAIN)))
+    for n in todo:
+        globals()[n]()
+    print("[done] security CSVs in", DATA)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

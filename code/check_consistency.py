@@ -216,6 +216,18 @@ chk("degeneracy numbers in tex",
     and "overlapping by $0.10$ on average over user pairs" in " ".join(tex.split()),
     "searched tex", needs_tex=True)
 
+# --- why the permutation key is granted a shared permutation ---------
+pv = {r["variant"]: float(r["legit_ser"]) for r in rows("perm_variant.csv")}
+chk("shared permutation legitimate rate", abs(pv["shared"] - 0.053) < 1e-3,
+    "%.5f" % pv["shared"])
+chk("per-user permutation legitimate rate",
+    abs(pv["per_user"] - 0.129) < 1e-3, "%.5f" % pv["per_user"])
+if HAVE_TEX:
+    chk("quoted permutation cost in tex",
+        "from $0.053$ to $0.129$" in " ".join(tex.split()),
+        "searched tex", needs_tex=True)
+
+
 # --- key-length sweep floor ------------------------------------------
 # The eavesdropper column is an average over eight substitute-key draws,
 # so the quoted floor must track the data and not one lucky draw.
