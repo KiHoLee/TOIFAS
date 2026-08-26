@@ -5,6 +5,7 @@
  "repeats": 8,
  "decisions_per_point": 799936,
  "distinct_tokens": 10486,
+ "token_collision": 0.006535221793661566,
  "max_token_id": 29599,
  "headlines_scored": 1948,
  "headline_runs": 4,

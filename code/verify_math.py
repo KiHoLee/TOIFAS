@@ -185,6 +185,10 @@ def v5_matched_jammer_concentrates():
     print(f"[{'PASS' if ok else 'FAIL'}] V5 matched bias / blind RMS: "
           f"matched={bm:.3f} blind_rms={brms:.4f} ratio={ratio:.1f} "
           f"(claim sqrt(d)={np.sqrt(D):.1f})")
+    ROWS.append(("V5 matched bias over blind RMS",
+                 "%.1f" % np.sqrt(D), "%.1f" % ratio,
+                 "%.2f" % abs(ratio - np.sqrt(D)), "1.0",
+                 "PASS" if ok else "FAIL"))
     return ok
 
 
@@ -260,16 +264,19 @@ def v8_cross_period_terms():
     import math
     import torch
     from exp_full import main_model
-    torch.manual_seed(7)
     m = main_model()
     Bn = m.unit_codebook().detach().cpu()
     pat = m.masks().detach().cpu()[0]
     L, P, d = m.L, m.P, m.d
+    # a generator of its own, seeded after the model is built: seeding the
+    # global one first leaves the draw dependent on how main_model consumed
+    # it, which moved this number between runs
+    g = torch.Generator().manual_seed(7)
     rel = []
-    for _ in range(300):
-        w = torch.randn(d)
+    for _ in range(20000):
+        w = torch.randn(d, generator=g)
         w /= w.norm()
-        i = torch.randint(m.vu, (P,))
+        i = torch.randint(m.vu, (P,), generator=g)
         e = (Bn[i] / math.sqrt(P)).reshape(-1)
         a = (w * e).reshape(P, L) * pat[None, :]
         diag = float((a ** 2).sum())

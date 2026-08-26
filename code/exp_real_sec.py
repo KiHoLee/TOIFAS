@@ -189,6 +189,10 @@ def main():
         "repeats": REPEATS,
         "decisions_per_point": N * U * REPEATS,
         "distinct_tokens": int(torch.unique(ids_all).numel()),
+        # the chance that two independently drawn tokens coincide, which
+        # is the floor the insider TER is measured against
+        "token_collision": float(((torch.bincount(ids_all.reshape(-1)).double()
+                                  / ids_all.numel()) ** 2).sum()),
         "max_token_id": int(ids_all.max()),
         "headlines_scored": sum(len(b) for b in bounds),
         "headline_runs": REC_RUNS,

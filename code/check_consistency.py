@@ -233,11 +233,39 @@ if HAVE_TEX:
 # so the quoted floor must track the data and not one lucky draw.
 kl = rows("sec_keylen.csv")
 floor = min(float(r["eve_ser"]) for r in kl)
-chk("eavesdropper floor over key length", abs(floor - 0.9984) < 5e-4,
+chk("eavesdropper floor over key length", 0.9983 < floor < 0.9984,
     "%.6f" % floor)
 if HAVE_TEX:
-    chk("quoted eavesdropper floor in tex", "$0.9984$" in tex,
+    chk("quoted eavesdropper floor in tex", "$0.9983$" in tex,
         "searched tex", needs_tex=True)
+
+
+# --- quantities that used to be quoted with no artifact ---------------
+import json as _json
+rs = _json.load(open(base / "data" / "real_sec_stats.json"))
+chk("token collision probability", abs(rs["token_collision"] - 0.0065) < 5e-5,
+    "%.6f" % rs["token_collision"])
+vm = {r["check"]: r for r in rows("verify_math.csv")}
+chk("V5 matched-over-blind ratio stored",
+    "V5 matched bias over blind RMS" in vm,
+    ", ".join(sorted(vm))[:60])
+chk("V8 cross-period remainder",
+    abs(float(vm["V8 cross-period remainder"]["empirical"])) < 5e-4,
+    vm["V8 cross-period remainder"]["empirical"])
+
+# --- information-theoretic leakage, which no assertion covered ---------
+it = {float(r["snr_db"]): r for r in rows("infotheory.csv")}[10.0]
+chk("fixed-key leakage 1.34 bits",
+    abs(float(it["mi_eve_fixed_bits"]) - 1.34) < 5e-3, it["mi_eve_fixed_bits"])
+chk("distinguishing advantage 0.27",
+    abs(float(it["tv_fixed"]) - 0.27) < 5e-3, it["tv_fixed"])
+chk("refreshed leakage 0.055 bits",
+    abs(float(it["mi_eve_refresh_bits"]) - 0.055) < 5e-4,
+    it["mi_eve_refresh_bits"])
+chk("secrecy rate 14.87 of 14.93",
+    abs(float(it["secrecy_rate_refresh_bits"]) - 14.87) < 5e-3
+    and abs(float(it["mi_legit_bits"]) - 14.93) < 5e-3,
+    "%s of %s" % (it["secrecy_rate_refresh_bits"], it["mi_legit_bits"]))
 
 
 # --- tables against their generator -----------------------------------
@@ -273,3 +301,6 @@ chk("abstract has no abbreviations",
 
 print()
 print("ALL CONSISTENT" if ok else "INCONSISTENCIES FOUND")
+# a checker that always exits zero cannot gate anything
+import sys as _sys
+_sys.exit(0 if ok else 1)
