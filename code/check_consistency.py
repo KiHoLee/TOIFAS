@@ -305,6 +305,16 @@ chk("learned 0.064 at 10 dB",
     "%.5f" % [float(r["legit"]) for r in _sl
               if float(r["snr_db"]) == 10.0][0])
 
+_bl = {int(r["K"]): float(r["ser_mask"])
+       for r in rows("sec_brute_learned.csv")}
+chk("learned key resists a million random guesses",
+    abs(_bl[1_000_000] - 0.72) < 5e-3, "%.4f" % _bl[1_000_000])
+_kl = {(float(r["snr_db"]), int(r["n_frames"])): float(r["eve_ser"])
+       for r in rows("kpa_learned.csv")}
+chk("learned key falls to known plaintext like the structured one",
+    _kl[(10.0, 4)] < 0.08 and _kl[(10.0, 1)] > 0.9,
+    "N=1 %.3f, N=4 %.4f" % (_kl[(10.0, 1)], _kl[(10.0, 4)]))
+
 # --- trends, which the value assertions above cannot see ---------------
 _snr = rows("sec_snr.csv")
 _lg = [float(r["legit"]) for r in _snr]
