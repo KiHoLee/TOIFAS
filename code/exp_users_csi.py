@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sse_lib as L
 from sse_lib import DATA, DEVICE, rayleigh_gain, snr_to_sigma2, eval_ser_sse
 from exp_full import (main_model, base_keys, get_model, eve_wrong_mask,
+                      oma_ser_keylen,
                       eval_ser_eve, mean_abs_xcorr, MAIN_D)
 
 SNR = 10.0
@@ -112,12 +113,15 @@ def main():
         ew = eve_wrong_mask(U, Lp, seed=20260813)
         ev = eval_ser_eve(m, ew, [SNR], frames=FRAMES)[0]
         xc = mean_abs_xcorr(m.masks().detach())
-        rows.append((U, "%.6f" % lg, "%.6f" % ev, "%.6f" % xc))
+        # OMA gets its own d/U dimensions per user at this load
+        oma = oma_ser_keylen(MAIN_D // U, SNR)
+        rows.append((U, "%.6f" % lg, "%.6f" % ev, "%.6f" % xc,
+                     "%.6f" % oma))
         print("  U=%2d  legit %.4f  eve %.5f  xcorr %.2e"
               % (U, lg, ev, xc), flush=True)
     with open(DATA / "users.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["users", "legit_ser", "eve_ser", "mask_xcorr"])
+        w.writerow(["users", "legit_ser", "eve_ser", "mask_xcorr", "oma"])
         w.writerows(rows)
     print("[csv]", DATA / "users.csv", flush=True)
 

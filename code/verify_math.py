@@ -130,7 +130,7 @@ def v3_leakage_vs_correlation():
         corrs.append(abs((m @ mt) / D))
     emp = float(np.mean(corrs))
     claim = float(np.sqrt(2.0 / (np.pi * D)))
-    ok_b = report("V3b random mask E|corr|", claim, emp, 0.1 * claim)
+    ok_b = report("V3b random mask E|corr|", claim, emp, 0.03 * claim)
     return lin_ok and ok_b
 
 
@@ -158,7 +158,7 @@ def v4_blind_jammer_spread():
     # full contribution scales this by (hJ^2/hu^2) rho.
     ok2 = report("V4b blind jammer projection variance",
                  float(np.mean(var_cl)), float(np.mean(var_emp)),
-                 0.05 * float(np.mean(var_cl)))
+                 0.01 * float(np.mean(var_cl)))
     return ok1 and ok2
 
 
@@ -282,10 +282,10 @@ def v8_cross_period_terms():
         diag = float((a ** 2).sum())
         rel.append((float((a.sum(0) ** 2).sum()) - diag) / diag)
     mean = sum(rel) / len(rel)
-    ok = abs(mean) < 0.01
+    ok = abs(mean) < 0.0005
     print("V8 cross-period remainder, mean %+.4f of the retained term" % mean)
     ROWS.append(("V8 cross-period remainder", "0.0", "%.6f" % mean,
-                 "%.6f" % abs(mean), "0.01", "PASS" if ok else "FAIL"))
+                 "%.6f" % abs(mean), "0.0005", "PASS" if ok else "FAIL"))
     return ok
 
 

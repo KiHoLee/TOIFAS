@@ -347,7 +347,6 @@ def fig_jam():
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
-    ax.set_ylim(0.0, 1.02)      # keep the reference line off the spine
     place_legend(ax)
     save(fig, "fig_sec_jam")
 
@@ -386,11 +385,11 @@ def fig_brute():
     x = col(r, "K")
     fig, ax = plt.subplots()
     ax.semilogx(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
-                label=LBL["perm"], **UNDER)
+                markevery=(0, 3), label=LBL["perm"], **UNDER)
     ax.semilogx(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
-                label=LBL["pad"], **OVER)
+                markevery=(1, 3), label=LBL["pad"], **OVER)
     ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
-                label=LBL["mask"])
+                markevery=(2, 3), label=LBL["mask"])
     legit = main_legit()
     ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
                label=LBL["legit"])
@@ -430,16 +429,18 @@ def fig_kpa():
     fig, ax = plt.subplots()
     sty = {0.0: (C_LEGIT, "o"), 10.0: (C_EVE, "s"),
            20.0: (C_PUB, "v")}
-    for snr, (c, mk) in sty.items():
+    for off, (snr, (c, mk)) in enumerate(sty.items()):
         rows = [row for row in r if float(row["snr_db"]) == snr]
         n = [float(row["n_frames"]) for row in rows]
         ser = [float(row["eve_ser"]) for row in rows]
         ax.semilogx(n, ser, color=c, marker=mk, ls="-",
+                    markevery=(off, 4), markerfacecolor="none" if off else c,
                     label=LBL["mask"] + f", {int(snr)} dB")
     try:
         p = load("pkpa.csv")
         ax.semilogx(col(p, "n_frames"), col(p, "eve_ser"), color=C_MATCH,
-                    marker="P", ls="--", label=LBL["perm"] + ", 20 dB")
+                    marker="P", ls="--", markevery=(3, 4),
+                    label=LBL["perm"] + ", 20 dB")
     except FileNotFoundError:
         print("[skip] pkpa.csv not present yet")
     # legitimate reference measured with the SAME estimator as the
