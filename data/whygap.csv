@@ -1,0 +1,4 @@
+family,legit_ser,kappa_bar,entry_use
+structured (frozen),0.05259,0.00000,1.0000
+learned (free start),0.06363,0.00444,0.0916
+learned (Walsh start),0.06489,0.00478,0.2797

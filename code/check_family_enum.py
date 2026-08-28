@@ -28,7 +28,7 @@ from pathlib import Path
 
 import torch
 
-from exp_full import MAIN_D, base_keys, get_model, main_model
+from exp_full import MAIN_D, base_keys, get_model_reg, main_model
 from sse_lib import DEVICE, rayleigh_gain, snr_to_sigma2, write_csv
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -117,7 +117,9 @@ def run():
     torch.manual_seed(SEED)
     rows = []
     _sweep(main_model(), "structured", rows)          # keys frozen to Walsh
-    _sweep(get_model(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1),
+    # the regularized keys of Section V-C, which are the learned family
+    # every figure draws; the unpenalized ones are a slot allocation
+    _sweep(get_model_reg(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1),
            "learned", rows)                           # keys trained in R^L
     write_csv(DATA / "family_enum.csv",
               ["family", "keying", "snr_db", "n_frames",

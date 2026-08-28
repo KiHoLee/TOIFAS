@@ -1,0 +1,20 @@
+part,case,structured_ser,structured_sd,learned_ser,kappa_and_verdict
+A one user,Walsh row,0.01330,0.00007,,
+A one user,all ones (no mask),0.01325,0.00022,,
+A one user,"learned, free",0.01480,0.00045,,
+B key length,L=6,0.99610,0.00048,0.99722,0.11111/tie
+B key length,L=8,0.94056,0.00686,0.95188,0.00000/tie
+B key length,L=10,0.83318,0.03634,0.80853,0.06667/tie
+B key length,L=12,0.41391,0.00154,0.41663,0.00000/tie
+B key length,L=14,0.39963,0.00779,0.37367,0.04762/learned
+B key length,L=16,0.25810,0.00119,0.28998,0.00000/structured
+B key length,L=18,0.23796,0.00182,0.23525,0.03704/tie
+B key length,L=20,0.18811,0.00113,0.21565,0.00000/structured
+B key length,L=22,0.17300,0.00072,0.18993,0.03030/structured
+B key length,L=24,0.15290,0.00034,0.17582,0.00000/structured
+C load,U=4,0.25810,0.00119,0.28998,0.00000/structured
+C load,U=8,0.95022,0.01381,0.97322,0.00000/tie
+C load,U=12,0.99882,0.00005,0.99867,0.00000/tie
+C load,U=15,0.99976,0.00000,0.99976,0.00000/tie
+C load,U=16,0.99976,0.00001,0.99976,0.00000/tie
+C load,U=20,0.99982,0.00000,0.99981,0.02105/learned

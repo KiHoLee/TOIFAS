@@ -365,7 +365,18 @@ def fig_keylen():
     ax.semilogy(col(rl, "L", int), col(rl, "legit_ser"), **STY["km_lrn"], label=LBL["legit_learned"])
     op = [(l, v) for l, v in zip(x, col(r, "oma")) if not math.isnan(v)]
     ax.semilogy([p[0] for p in op], [p[1] for p in op], **STY["oma"], label=LBL["oma"])
-    ax.semilogy(x, col(r, "eve_ser"), **STY["eve"], label=LBL["eve_key"])
+    ax.semilogy(x, col(r, "eve_ser"), **STY["eve"], markevery=(0, 2),
+                label=LBL["eve_key"], **UNDER)
+    # the permutation key shares this physical layer, so its legitimate
+    # curve lies on the structured one and appears at every key length
+    # rather than only in the tables. Its outsider measures 0.99997 to
+    # 0.99999 and would lie on the outsider curve already drawn, in the
+    # same style as this one and with no legend entry of its own, so the
+    # caption says where it sits instead.
+    rp = load("sec_keylen_perm.csv")
+    assert min(float(r["eve_ser"]) for r in rp) > 0.999,         "the permutation outsider left the random-guess level"
+    ax.semilogy(col(rp, "L", int), col(rp, "legit_ser"), **STY["perm"],
+                markevery=(1, 2), label=LBL["perm"], **OVER)
     ax.set_ylim(top=22.0)    # headroom above the flat eavesdropper curve
     # an error rate cannot exceed one, and the room below the data holds
     # the legend, since every curve decays to the right
@@ -409,7 +420,7 @@ def fig_jam():
     # axis-spanning lines, so it cannot move the legend off this one, and
     # a reference drawn along the legend frame reads as part of the box.
     ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9, zorder=0)
-    ax.set_ylim(6e-3, 1.4)
+    ax.set_ylim(2.5e-2, 1.4)
     # a log axis spanning little more than a decade prints minor labels
     # like 6x10^-1 that consume the left margin, so only the decades are
     # labelled
@@ -478,20 +489,20 @@ def fig_real():
     r = load("real_sec_ter.csv")
     x = col(r, "snr_db")
     fig, ax = plt.subplots()
-    # insider and outsider still nearly coincide and are layered; the
-    # legitimate and OMA curves are separate at this frame
+    # two pairs nearly coincide here, the two legitimate realizations
+    # within a fifth of each other and the two adversaries both at the
+    # top, so each pair is layered and its markers staggered
     ax.semilogy(x, col(r, "ter_legit"), **STY["km_str"],
-                markevery=(0, 2), label=LBL["legit"], **UNDER)
+                markevery=(0, 3), label=LBL["legit"], **UNDER)
     rt = load("real_sec_ter_learned.csv")
-    ax.semilogy(col(rt, "snr_db"), col(rt, "ter_legit"),
-                **STY["km_lrn"], markevery=(1, 2),
-                label=LBL["legit_learned"])
+    ax.semilogy(col(rt, "snr_db"), col(rt, "ter_legit"), **STY["km_lrn"],
+                markevery=(1, 3), label=LBL["legit_learned"], **OVER)
     ax.semilogy(x, col(r, "ter_oma"), **STY["oma"],
-                markevery=(1, 2), label=LBL["oma"], **OVER)
+                markevery=(2, 3), label=LBL["oma"])
     ax.semilogy(x, col(r, "ter_insider"), **STY["insider"],
-                markevery=(0, 2), label=LBL["insider"], **UNDER)
+                markevery=(0, 3), label=LBL["insider"], **UNDER)
     ax.semilogy(x, col(r, "ter_eve"), **STY["eve"],
-                markevery=(1, 2), label=LBL["outsider"], **OVER)
+                markevery=(2, 3), label=LBL["outsider"], **OVER)
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("TER")
     ax.set_xlim(min(x), max(x))

@@ -194,11 +194,14 @@ def stage_N():
     The structured family is enumerable and closed under the elementwise
     product, the learned one is neither, so the paper reports both. This
     stage runs the same SNR sweep as stage_A with the keys trained in
-    R^L instead of frozen to Walsh-Hadamard rows, at the same frame
-    count, so the two are directly comparable.
+    R^L under the regularized loss instead of frozen to Walsh-Hadamard
+    rows, at the same frame count, so the two are directly comparable.
     """
     print("[N] security vs SNR, learned key family ...")
-    m = get_model(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1)
+    # the regularized loss of Section V-C, not the cross-entropy alone:
+    # see exp_learned.learned_model for why the unpenalized keys are not
+    # the family the paper claims
+    m = get_model_reg(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1)
     snr = [float(v) for v in range(0, 21, 2)]
     frames = 800_000
     legit = eval_ser_sse(m, snr, frames=frames)

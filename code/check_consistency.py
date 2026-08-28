@@ -55,8 +55,11 @@ chk("24 and 35 in tex", "$24$ to\n$35$~percent" in tex or "$24$ to $35$~percent"
 ew = [float(x["eve_wrong"]) for x in sn]
 ch = float(sn[0]["chance"])
 dev = max(abs(x - ch) for x in ew)
-chk("outsider at chance to 3.5e-4", dev < 3.6e-4, "max deviation %.2e" % dev)
-chk("3.5e-4 in tex", "$3.5\\times10^{-4}$" in tex, "searched tex",
+_ewl = [float(x["eve_wrong"]) for x in rows("sec_snr_learned.csv")]
+dev = max(dev, max(abs(x - ch) for x in _ewl))
+chk("outsider at chance to 4e-4, both families", dev < 4.0e-4,
+    "max deviation %.2e" % dev)
+chk("4e-4 in tex", "$4\\times10^{-4}$" in tex, "searched tex",
     needs_tex=True)
 
 # the main configuration's legitimate rate, the reference every later
@@ -212,8 +215,8 @@ chk("learned support overlap 0.10",
     round(float(md["learned"]["mean_overlap"]), 2) == 0.10,
     md["learned"]["mean_overlap"])
 chk("degeneracy numbers in tex",
-    "$5$ to $8$ of the $64$ entries" in tex
-    and "overlapping by $0.10$" in " ".join(tex.split()),
+    "$5$ to $8$ of the $64$ entries" in " ".join(tex.split())
+    and "only $0.10$ of the smaller of any two such sets" in " ".join(tex.split()),
     "searched tex", needs_tex=True)
 
 # --- why the permutation key is granted a shared permutation ---------
@@ -224,7 +227,7 @@ chk("per-user permutation legitimate rate",
     abs(pv["per_user"] - 0.129) < 1e-3, "%.5f" % pv["per_user"])
 if HAVE_TEX:
     chk("quoted permutation cost in tex",
-        "from $0.053$ to $0.129$" in " ".join(tex.split()),
+        "at $0.129$ against $0.053$" in " ".join(tex.split()),
         "searched tex", needs_tex=True)
 
 
@@ -299,21 +302,39 @@ chk("learned family tracks the structured one over the SNR range",
                                 for r in _sl),
                             max(float(r["legit"]) / _sn[float(r["snr_db"])]
                                 for r in _sl)))
-chk("learned 0.064 at 10 dB",
-    abs([float(r["legit"]) for r in _sl
-         if float(r["snr_db"]) == 10.0][0] - 0.064) < 5e-4,
-    "%.5f" % [float(r["legit"]) for r in _sl
-              if float(r["snr_db"]) == 10.0][0])
+_l10 = [float(r["legit"]) for r in _sl if float(r["snr_db"]) == 10.0][0]
+chk("learned 0.061 at 10 dB", abs(_l10 - 0.061) < 5e-4, "%.5f" % _l10)
+# The learned curves must be the regularized keys, not the unpenalized
+# ones. Both are measured in sec_maskfam.csv and they differ by 0.003,
+# which is larger than the spread of either, so matching the right row
+# pins which family every figure draws. Cross-entropy alone drifts to a
+# slot allocation whose key space is a support rather than a sphere, so
+# drawing it would not support the key-space claim.
+_fam = {r["family"]: float(r["legit_ser"]) for r in rows("sec_maskfam.csv")}
+chk("the plotted learned family is the regularized one",
+    abs(_l10 - _fam["learned_reg"]) < abs(_l10 - _fam["learned"])
+    and abs(_l10 - _fam["learned_reg"]) < 1.5e-3,
+    "plotted %.5f, reg %.5f, plain %.5f"
+    % (_l10, _fam["learned_reg"], _fam["learned"]))
 
 _bl = {int(r["K"]): float(r["ser_mask"])
        for r in rows("sec_brute_learned.csv")}
 chk("learned key resists a million random guesses",
-    abs(_bl[1_000_000] - 0.72) < 5e-3, "%.4f" % _bl[1_000_000])
+    abs(_bl[1_000_000] - 0.71) < 5e-3, "%.4f" % _bl[1_000_000])
 _kl = {(float(r["snr_db"]), int(r["n_frames"])): float(r["eve_ser"])
        for r in rows("kpa_learned.csv")}
 chk("learned key falls to known plaintext like the structured one",
     _kl[(10.0, 4)] < 0.08 and _kl[(10.0, 1)] > 0.9,
     "N=1 %.3f, N=4 %.4f" % (_kl[(10.0, 1)], _kl[(10.0, 4)]))
+
+_rs = {float(r["snr_db"]): float(r["ter_legit"])
+       for r in rows("real_sec_ter.csv")}
+_rl = {float(r["snr_db"]): float(r["ter_legit"])
+       for r in rows("real_sec_ter_learned.csv")}
+_rat = [_rl[k] / _rs[k] for k in _rs]
+chk("learned keeps its uniform-source distance on real text",
+    all(1.10 < v < 1.25 for v in _rat),
+    "ratio %.2f to %.2f" % (min(_rat), max(_rat)))
 
 # --- trends, which the value assertions above cannot see ---------------
 _snr = rows("sec_snr.csv")
@@ -387,7 +408,8 @@ for _k, _c in [("V8 cross-period remainder", 0.0005),
         and float(_vm[_k]["abs_err"]) <= _c,
         _vm[_k]["empirical"] if _k in _vm else "row missing")
 chk("format-matched OMA quoted as 0.055",
-    "$0.055$ at $10$~dB against the proposed" in tex, "Section VI-B",
+    "$0.055$ at $10$~dB" in tex and "the proposed $0.053$" in tex,
+    "Section VI-B",
     needs_tex=True)
 
 # --- tables against their generator -----------------------------------

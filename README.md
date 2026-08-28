@@ -32,6 +32,12 @@ code/
   check_cov_*.py        ciphertext-only covariance-attack checks (referee M1)
   exp_real_sec.py       stage G: real BERT WordPiece token streams
   verify_math.py        closed-form checks V1-V11, PASS/FAIL and verify_math.csv
+  exp_learned.py        every KM (lrn.) artifact, one function per stage
+  run_learned_reg.py    runs those stages in order, sens before brute
+  merge_learned_rows.py folds the learned rows into the two table sources
+  report_learned.py     every learned number beside its structured one
+  diag_whygap.py        why a fixed key beats a learned one here
+  diag_jscc.py          where a learned mask would win instead
   replot_security.py    every result figure, from data/ to fig/
   make_tables.py        LaTeX rows of every result table, from data/
   feasibility_security.py   early CPU-sized study, kept for the record
@@ -60,9 +66,18 @@ python exp_users_csi.py      # load and channel-estimate sweeps
 python check_cov_attack.py   # ciphertext-only covariance attack
 python diag_maskdegen.py     # learned-key support degeneracy
 python check_family_enum.py  # ciphertext-only enumeration of the key family
+python run_learned_reg.py    # every KM (lrn.) artifact, regularized keys
+python merge_learned_rows.py # the learned rows of the two result tables
 python replot_security.py    # all figures from the CSVs
 python make_tables.py        # LaTeX rows of the result tables
 ```
+
+The learned keys are the regularized ones of Section V-C, trained under
+the two penalties rather than under the cross-entropy alone. Training on
+the cross-entropy alone drifts to disjoint sparse supports, which is an
+orthogonal slot allocation rather than a superposition; `diag_whygap.py`
+measures that drift and `exp_learned.learned_model` says why the
+regularized keys are the ones every figure draws.
 
 Seeds are fixed: training 1, evaluation 777, attacker key guess
 20260813, key recovery 4242, brute-force search 31, cross-scheme
@@ -82,17 +97,17 @@ Logarithms in an entropy or an information rate are base two.
 
 | Artifact | Script | Data |
 |---|---|---|
-| Fig. 2 SER against SNR | `exp_full.stage_A` | `sec_snr.csv` |
-| Fig. 3 key length | `exp_full.stage_B` | `sec_keylen.csv` |
-| Fig. 4 jamming (4 schemes) | `exp_full.stage_C`, `stage_L` | `sec_jam_cmp.csv`, `sec_jam.csv` |
-| Fig. 5 key sensitivity | `exp_full.stage_I` | `sec_sens_cmp.csv` |
-| Fig. 6 brute-force search | `exp_full.stage_I`, `stage_F`, `stage_J` | `sec_brute_cmp.csv`, `sec_brute.csv` |
-| Fig. 7 known-plaintext attack | `exp_kpa`, `exp_permkpa` | `kpa.csv`, `pkpa.csv` |
-| Fig. 8 real token streams | `exp_real_sec` | `real_sec_ter.csv` |
-| Scheme comparison table | `exp_full.stage_E` | `sec_compare.csv` |
-| Key family table | `exp_full.stage_D` | `sec_maskfam.csv`, `sec_regjam.csv` |
-| Headline recovery table | `exp_real_sec` | `real_sec_stats.json` |
-| Key refresh tables | `exp_refresh` | `refresh_summary.csv`, `refresh_kpa.csv` |
+| Fig. 2 SER against SNR | `exp_full.stage_A`, `stage_N` | `sec_snr.csv`, `sec_snr_learned.csv` |
+| Fig. 3 key length | `exp_full.stage_B`, `exp_learned.keylen`, `.keylen_perm` | `sec_keylen.csv`, `sec_keylen_learned.csv`, `sec_keylen_perm.csv` |
+| Fig. 4 jamming (5 curves) | `exp_full.stage_C`, `stage_L`, `exp_learned.jamming` | `sec_jam_cmp.csv`, `sec_jam.csv`, `sec_jam_learned.csv` |
+| Fig. 5 key sensitivity | `exp_full.stage_I`, `exp_learned.sens` | `sec_sens_cmp.csv`, `sec_sens_learned.csv` |
+| Fig. 6 brute-force search | `exp_full.stage_I`, `stage_F`, `stage_J`, `exp_learned.brute` | `sec_brute_cmp.csv`, `sec_brute.csv`, `sec_brute_learned.csv` |
+| Fig. 7 known-plaintext attack | `exp_kpa`, `exp_permkpa`, `exp_learned.kpa` | `kpa.csv`, `pkpa.csv`, `kpa_learned.csv` |
+| Fig. 8 real token streams | `exp_real_sec`, `exp_learned.real` | `real_sec_ter.csv`, `real_sec_ter_learned.csv` |
+| Scheme comparison table | `exp_full.stage_E`, `exp_learned.compare`, `merge_learned_rows` | `sec_compare.csv` |
+| Key families (Sec. VI-G prose) | `exp_full.stage_D` | `sec_maskfam.csv`, `sec_regjam.csv` |
+| Headline recovery (Sec. VI-H prose) | `exp_real_sec` | `real_sec_stats.json` |
+| Key refresh table | `exp_refresh`, `exp_learned.refresh`, `merge_learned_rows` | `refresh_summary.csv`, `refresh_kpa.csv` |
 | Information-theoretic leakage | `exp_infotheory` | `infotheory.csv` |
 | Semantic similarity | `exp_semantic` | `semantic.csv` |
 | Load and channel-estimate sweeps | `exp_users_csi` | `users.csv`, `csi.csv` |
@@ -103,6 +118,8 @@ Run one stage on its own with `python code/exp_full.py stage_B`, or the whole ch
 | Covariance attack (Sec. IV) | `check_cov_attack` | `cov_attack.csv` |
 | Learned-key degeneracy (Sec. VI-F) | `diag_maskdegen` | `maskdegen.csv` |
 | Closed-form and symbolic checks | `verify_math` | `verify_math.csv` |
+| Why a fixed key wins here (not in the paper) | `diag_whygap` | `whygap.csv` |
+| Where a learned mask would win (not in the paper) | `diag_jscc` | `jscc.csv` |
 
 ## Security scope
 

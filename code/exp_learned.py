@@ -11,7 +11,8 @@ ones.
 
 Every evaluation mirrors its structured counterpart exactly: same SNR,
 same frame counts, same seeds, same evaluators. Only the key family
-differs.
+differs. The learned keys are the regularized ones of Section V-C, not
+the unpenalized ones: see learned_model below for why.
 """
 from __future__ import annotations
 
@@ -21,16 +22,28 @@ from pathlib import Path
 import torch
 
 import exp_kpa
+import exp_refresh
 from exp_full import (MAIN_D, eval_ser_eve, eval_ser_jam, eve_wrong_mask,
-                      get_model, mean_abs_xcorr, oma_ser_keylen)
+                      get_model_reg, mean_abs_xcorr, oma_ser_keylen)
 from sse_lib import DATA, DEVICE, eval_ser_sse, write_csv
 
 SEED = 1
 
 
 def learned_model(d=MAIN_D, P=4, vu=16, U=4, iters=4000, seed=SEED):
-    """The learned counterpart of main_model: same everything, keys free."""
-    return get_model(P=P, vu=vu, d=d, U=U, iters=iters, seed=seed)
+    """The learned counterpart of main_model: same everything, keys free.
+
+    The keys are trained under the two penalties of the regularized loss
+    rather than under the cross-entropy alone. Cross-entropy on its own
+    has an attractor at disjoint sparse supports, which is an orthogonal
+    slot allocation: the keys it reaches carry 99 percent of their
+    energy on about six of the L entries, so a digit is decided over a
+    sixth of its period and the key set is a choice of support rather
+    than a dense direction in R^L. The penalties are the design of
+    Section V-C and hold that drift back, which is the realization the
+    paper claims for the learned family.
+    """
+    return get_model_reg(P=P, vu=vu, d=d, U=U, iters=iters, seed=seed)
 
 
 def keylen():
@@ -56,7 +69,7 @@ def jamming():
     """Fig. 4's learned curves."""
     print("[learned] jamming ...")
     m = learned_model()
-    jsr = [-10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0]
+    jsr = [float(v) for v in range(-10, 21, 2)]   # the grid Fig. 4's other curves use
     blind = eval_ser_jam(m, 10.0, jsr, frames=500_000, mode="blind", target=0)
     matched = eval_ser_jam(m, 10.0, jsr, frames=500_000, mode="matched",
                            target=0)
@@ -106,7 +119,7 @@ def refresh():
     W0, B0 = m.W.detach().clone(), m.B.detach().clone()
     base = eval_ser_sse(m, [10.0], frames=300_000)[0]
     out = []
-    for b in range(8):
+    for b in range(exp_refresh.BLOCKS):
         g = torch.Generator(device=DEVICE).manual_seed(5150 + b)
         xi = torch.randperm(m.L, generator=g, device=DEVICE)
         eps = torch.randint(2, (m.L,), generator=g, device=DEVICE) * 2.0 - 1.0
@@ -133,11 +146,15 @@ def compare():
     print("[learned] scheme comparison ...")
     m = learned_model()
     F = 300_000
-    legit = eval_ser_sse(m, [10.0], frames=F)[0]
-    out = eval_ser_eve(m, eve_wrong_mask(m.users, m.L,
-                                         seed=20260813).to(DEVICE),
-                       [10.0], frames=F)[0]
-    ins = eval_ser_eve(m, m.masks().detach().roll(1, 0), [10.0], frames=F)[0]
+    # the table caption states a user-1 convention and every structured
+    # row honours it, so this row uses the same evaluator rather than the
+    # four-user average eval_ser_eve returns
+    from exp_full import eval_scheme
+    legit = eval_scheme(m, 10.0, F)
+    out = eval_scheme(m, 10.0, F,
+                      rx_masks=eve_wrong_mask(m.users, m.L,
+                                              seed=20260813).to(DEVICE))
+    ins = eval_scheme(m, 10.0, F, rx_masks=m.masks().detach().roll(1, 0))
     jam = eval_ser_jam(m, 10.0, [0.0], frames=F, mode="blind", target=0)[0]
     write_csv(DATA / "compare_learned.csv",
               ["scheme", "legit_ser", "eve_out", "eve_in", "jam0_ser"],
@@ -235,3 +252,29 @@ def real():
         for n, blob in saved.items():
             (DATA / n).write_bytes(blob)
     print("   learned artifacts written, structured ones restored")
+
+
+def keylen_perm():
+    """Fig. 3's permutation-key curves.
+
+    The permutation scheme keeps the masks public and hides the frame
+    order instead, so its legitimate receiver inverts the permutation
+    and decodes as the public-mask receiver does, while its eavesdropper
+    holds the public masks but not the order. Both are swept over the
+    same key lengths as the structured family so the figure carries the
+    comparison scheme at every point rather than only at L = 64.
+    """
+    import torch
+    from exp_full import (eval_scheme, eval_scheme_permuted_eve, main_model)
+    print("[learned] key length, permutation key ...")
+    rows = []
+    for d in [32, 48, 64, 80, 96, 128, 192, 256]:
+        m = main_model(d=d)
+        gp = torch.Generator().manual_seed(11)
+        perms = torch.randperm(d, generator=gp)[None].repeat(m.users, 1)
+        lg = eval_scheme(m, 10.0, 500_000, perms=perms)
+        ev = eval_scheme_permuted_eve(m, 10.0, 500_000, perms)
+        rows.append((m.L, d, lg, ev))
+        print("   L=%3d  legit %.4f  eve %.4f" % (m.L, lg, ev))
+    write_csv(DATA / "sec_keylen_perm.csv",
+              ["L", "d", "legit_ser", "eve_ser"], rows)
