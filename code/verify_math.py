@@ -289,6 +289,30 @@ def v8_cross_period_terms():
     return ok
 
 
+def v9_score_variance_ratio():
+    """Per-digit score-variance ratio of Proposition 1's proof: the mean
+    of sum_j e_j^4 / sum_j e_j^2 e'_j^2 over ordered codeword pairs of
+    the trained unit codebook, quoted as 2.8 in the manuscript."""
+    import torch
+    from exp_full import main_model
+    m = main_model()
+    B = m.unit_codebook().detach().cpu().double()
+    B = B / B.norm(dim=1, keepdim=True)
+    n = B.shape[0]
+    num = (B ** 4).sum(1)
+    ratios = []
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                ratios.append(float(num[i] / (B[i] ** 2 * B[j] ** 2).sum()))
+    mean = sum(ratios) / len(ratios)
+    ok = abs(mean - 2.8) < 0.05
+    print("V9 per-digit score-variance ratio: %.3f (quoted 2.8)" % mean)
+    ROWS.append(("V9 score-variance ratio", "2.8", "%.4f" % mean,
+                 "%.4f" % abs(mean - 2.8), "0.05", "PASS" if ok else "FAIL"))
+    return ok
+
+
 def main():
     print(f"config d={D} U={U} V={V}\n")
     results = {
@@ -300,6 +324,7 @@ def main():
         "V6": v6_coded_oma_outage(),
         "V7": v7_symbolic_identities(),
         "V8": v8_cross_period_terms(),
+        "V9": v9_score_variance_ratio(),
     }
     print("\nsummary:", {k: ("PASS" if v else "FAIL") for k, v in results.items()})
     print("ALL PASS" if all(results.values()) else "SOME FAILED")
