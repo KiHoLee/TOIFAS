@@ -13,7 +13,7 @@ DATA = Path(__file__).resolve().parents[1] / "data"
 NAME = {
     "proposed": r"\textbf{Proposed keyed masking}",
     "public_mask": "Public masks",
-    "perm_key": r"Permutation key~\cite{chen2023shuffling}",
+    "perm_key": r"Permutation key~\cite{chen2025shufflingtifs}",
     "index_cipher": "Index cipher",
     "oma_plain": "OMA (no encryption)",
     "random": "Random",

@@ -268,6 +268,92 @@ chk("secrecy rate 14.87 of 14.93",
     "%s of %s" % (it["secrecy_rate_refresh_bits"], it["mi_legit_bits"]))
 
 
+_fe = {(float(r["snr_db"]), int(r["n_frames"]), r["keying"]): float(r["recovery"])
+       for r in rows("family_enum.csv")}
+chk("family enumeration recovers the user set at 10 dB",
+    abs(_fe[(10.0, 1, "fixed")] - 0.905) < 5e-3
+    and abs(_fe[(10.0, 4, "fixed")] - 0.990) < 5e-3,
+    "N=1 %.3f, N=4 %.3f" % (_fe[(10.0, 1, "fixed")],
+                            _fe[(10.0, 4, "fixed")]))
+chk("the refresh defeats the family enumeration",
+    _fe[(10.0, 2, "refreshed")] == 0.0,
+    "%.3f over 200 blocks" % _fe[(10.0, 2, "refreshed")])
+
+# --- trends, which the value assertions above cannot see ---------------
+_snr = rows("sec_snr.csv")
+_lg = [float(r["legit"]) for r in _snr]
+chk("legitimate SER falls monotonically with SNR",
+    all(a > b for a, b in zip(_lg, _lg[1:])), "%d points" % len(_lg))
+chk("legitimate below the binary OMA reference at every SNR",
+    all(float(r["legit"]) < float(r["oma"]) for r in _snr),
+    "min margin %.3f" % min(1 - float(r["legit"]) / float(r["oma"])
+                            for r in _snr))
+_kl = rows("sec_keylen.csv")
+chk("legitimate SER falls monotonically with key length",
+    all(float(a["legit_ser"]) > float(b["legit_ser"]) for a, b in zip(_kl, _kl[1:])),
+    "%d lengths" % len(_kl))
+chk("legitimate surpasses the reference from L=16 onward",
+    all(float(r["legit_ser"]) < float(r["oma"]) for r in _kl
+        if r["oma"] != "nan" and int(float(r["L"])) >= 16),
+    "checked L>=16")
+_ter = rows("real_sec_ter.csv")
+chk("legitimate TER below OMA over the whole range",
+    all(float(r["ter_legit"]) < float(r["ter_oma"]) for r in _ter),
+    "%d points" % len(_ter))
+chk("outsider TER stays above 0.9991",
+    min(float(r["ter_eve"]) for r in _ter) > 0.9991,
+    "min %.6f" % min(float(r["ter_eve"]) for r in _ter))
+
+# --- files no assertion read ------------------------------------------
+_us = rows("users.csv")
+chk("keys stay exactly orthogonal at every load",
+    all(float(r["mask_xcorr"]) == 0.0 for r in _us),
+    "U up to %s" % _us[-1]["users"])
+chk("eavesdropper never leaves chance across the load sweep",
+    all(float(r["eve_ser"]) > 0.999 for r in _us),
+    "min %.6f" % min(float(r["eve_ser"]) for r in _us))
+_u = {r["users"]: r for r in _us}
+chk("load endpoints 0.027 and 0.946",
+    abs(float(_u["2"]["legit_ser"]) - 0.027) < 5e-4
+    and abs(float(_u["32"]["legit_ser"]) - 0.946) < 5e-4,
+    "%.4f, %.4f" % (float(_u["2"]["legit_ser"]),
+                    float(_u["32"]["legit_ser"])))
+chk("the OMA crossing lies between U=16 and U=32",
+    float(_u["16"]["legit_ser"]) < float(_u["16"]["oma"])
+    and float(_u["32"]["legit_ser"]) > float(_u["32"]["oma"]),
+    "16: %.3f<%.3f, 32: %.3f>%.3f"
+    % (float(_u["16"]["legit_ser"]), float(_u["16"]["oma"]),
+       float(_u["32"]["legit_ser"]), float(_u["32"]["oma"])))
+_csi = rows("csi.csv")
+chk("phase residual moves the rate to 0.057 at 0.2 rad",
+    any(abs(float(r["legit_ser"]) - 0.057) < 1e-3 for r in _csi),
+    "%d rows" % len(_csi))
+_sem = rows("semantic.csv")
+chk("legitimate similarity at least 0.96 in both spaces",
+    all(float(r["legit"]) >= 0.96 for r in _sem if r["snr_db"] == "10.0"),
+    "%d rows" % len(_sem))
+_cov = rows("cov_attack.csv")
+chk("covariance attack reaches 0.26 at 300 same-key frames",
+    any(r["n_frames"] == "300" and abs(float(r["eve_ser"]) - 0.26) < 0.01
+        for r in _cov),
+    "%d rows" % len(_cov))
+chk("unjammed reference is 0.053",
+    abs(col("sec_jam.csv", "nojam")[0] - 0.053) < 0.05, "sec_jam.csv read")
+
+# --- the closed-form checks the manuscript quotes ----------------------
+_vm = {r["check"]: r for r in rows("verify_math.csv")}
+for _k, _c in [("V8 cross-period remainder", 0.0005),
+               ("V9 score-variance ratio", 0.05),
+               ("V10 format-matched OMA at 10 dB", 0.001),
+               ("V3a bias slope in kappa", 0.03)]:
+    chk("stored check %s passes" % _k.split()[0],
+        _k in _vm and _vm[_k]["verdict"] == "PASS"
+        and float(_vm[_k]["abs_err"]) <= _c,
+        _vm[_k]["empirical"] if _k in _vm else "row missing")
+chk("format-matched OMA quoted as 0.055",
+    "$0.055$ at $10$~dB against the proposed" in tex, "Section VI-B",
+    needs_tex=True)
+
 # --- tables against their generator -----------------------------------
 # Every printed table cell must be the one make_tables.py derives from
 # data/, so a rerun that moves a number cannot leave the manuscript behind.

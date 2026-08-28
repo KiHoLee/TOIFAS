@@ -31,7 +31,7 @@ code/
   exp_permkpa.py        permutation-key known-plaintext attack (Fig. 7)
   check_cov_*.py        ciphertext-only covariance-attack checks (referee M1)
   exp_real_sec.py       stage G: real BERT WordPiece token streams
-  verify_math.py        closed-form checks V1-V5, PASS/FAIL and verify_math.csv
+  verify_math.py        closed-form checks V1-V11, PASS/FAIL and verify_math.csv
   replot_security.py    every result figure, from data/ to fig/
   make_tables.py        LaTeX rows of every result table, from data/
   feasibility_security.py   early CPU-sized study, kept for the record
@@ -53,6 +53,12 @@ python exp_full.py           # stages A-F and L
 python exp_kpa.py            # known-plaintext attack
 python exp_refresh.py        # the key-refresh layer
 python exp_real_sec.py       # real token streams
+python exp_permkpa.py        # permutation-key known plaintext
+python exp_infotheory.py     # mutual information and equivocation
+python exp_semantic.py       # semantic-similarity leakage
+python exp_users_csi.py      # load and channel-estimate sweeps
+python check_cov_attack.py   # ciphertext-only covariance attack
+python check_family_enum.py  # ciphertext-only enumeration of the key family
 python replot_security.py    # all figures from the CSVs
 python make_tables.py        # LaTeX rows of the result tables
 ```
@@ -77,9 +83,9 @@ Logarithms in an entropy or an information rate are base two.
 |---|---|---|
 | Fig. 2 SER against SNR | `exp_full.stage_A` | `sec_snr.csv` |
 | Fig. 3 key length | `exp_full.stage_B` | `sec_keylen.csv` |
-| Fig. 4 jamming (4 schemes) | `exp_full.stage_L` | `sec_jam_cmp.csv`, `sec_jam.csv` |
+| Fig. 4 jamming (4 schemes) | `exp_full.stage_C`, `stage_L` | `sec_jam_cmp.csv`, `sec_jam.csv` |
 | Fig. 5 key sensitivity | `exp_full.stage_I` | `sec_sens_cmp.csv` |
-| Fig. 6 brute-force search | `exp_full.stage_J` | `sec_brute_cmp.csv`, `sec_brute.csv` |
+| Fig. 6 brute-force search | `exp_full.stage_I`, `stage_F`, `stage_J` | `sec_brute_cmp.csv`, `sec_brute.csv` |
 | Fig. 7 known-plaintext attack | `exp_kpa`, `exp_permkpa` | `kpa.csv`, `pkpa.csv` |
 | Fig. 8 real token streams | `exp_real_sec` | `real_sec_ter.csv` |
 | Scheme comparison table | `exp_full.stage_E` | `sec_compare.csv` |
@@ -103,8 +109,8 @@ measures. The key must therefore be refreshed per coherence block from a shared
 seed. `exp_refresh.py` implements that layer and shows why it has to
 draw from the transformations that leave the decision statistic
 invariant: a refresh that installs fresh orthogonal keys instead costs
-the legitimate users a factor of nearly three, while the invariant
-refresh costs nothing and raises the per-block key from 15.0 to 64.8
+the legitimate users a factor of 2.3, while the invariant
+refresh costs nothing and raises the per-block key from 23.8 to 364.6
 bits.
 
 ## License

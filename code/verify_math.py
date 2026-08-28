@@ -18,8 +18,31 @@ Run on CPU (NumPy); no training involved, pure algebra checks.
 from __future__ import annotations
 import numpy as np
 
+from pathlib import Path
+
 RNG = np.random.default_rng(2026)
 D, U, V = 64, 4, 256
+
+CKPT = Path(__file__).resolve().parent.parent / "data" / "model_main.pt"
+
+
+def cached_main_model():
+    """The trained main-configuration model, from a checkpoint.
+
+    V8 and V9 read the trained codebook. Retraining it reproduces only
+    on the device that trained it, so a CPU run of the released package
+    disagreed with the shipped numbers. The checkpoint fixes the
+    codebook, which is what both checks are about; delete it to retrain.
+    """
+    import torch
+    from exp_full import main_model
+    m = main_model()
+    if CKPT.exists():
+        m.load_state_dict(torch.load(CKPT, map_location="cpu"))
+    else:
+        torch.save({k: v.cpu() for k, v in m.state_dict().items()}, CKPT)
+    return m
+
 
 
 def unit_codebook(V, d, rng):
@@ -121,6 +144,9 @@ def v3_leakage_vs_correlation():
     lin_ok = all(abs(b - rho * b1) <= 3e-2 for rho, b in slopes)
     print(f"[{'PASS' if lin_ok else 'FAIL'}] V3a bias linear in rho: "
           + ", ".join(f"rho={r:.2f}->{b:.3f}" for r, b in slopes))
+    ROWS.append(("V3a bias slope in kappa", "1.0", "%.4f" % b1,
+                 "%.4f" % abs(1.0 - b1), "0.03",
+                 "PASS" if lin_ok else "FAIL"))
     # (b) random independent mask correlation: E|corr| = sqrt(2/(pi d))
     # (the folded-normal mean of a N(0, 1/d) variable)
     corrs = []
@@ -263,8 +289,7 @@ def v8_cross_period_terms():
     the codebook, which is the claim the proof rests on."""
     import math
     import torch
-    from exp_full import main_model
-    m = main_model()
+    m = cached_main_model()
     Bn = m.unit_codebook().detach().cpu()
     pat = m.masks().detach().cpu()[0]
     L, P, d = m.L, m.P, m.d
@@ -294,8 +319,7 @@ def v9_score_variance_ratio():
     of sum_j e_j^4 / sum_j e_j^2 e'_j^2 over ordered codeword pairs of
     the trained unit codebook, quoted as 2.8 in the manuscript."""
     import torch
-    from exp_full import main_model
-    m = main_model()
+    m = cached_main_model()
     B = m.unit_codebook().detach().cpu().double()
     B = B / B.norm(dim=1, keepdim=True)
     n = B.shape[0]
@@ -313,6 +337,41 @@ def v9_score_variance_ratio():
     return ok
 
 
+
+def v10_format_matched_oma():
+    """The format-matched OMA reference of Section VI-B.
+
+    The binary reference spends 16 of its 64 exclusive dimensions on
+    antipodal bits. The same allocation spent the way the proposed
+    scheme spends it, P=4 sixteen-ary orthogonal decisions over 16
+    dimensions each, is the comparison a reviewer will ask for."""
+    from sse_lib import oma_ser_orth
+    from exp_full import oma_ser_keylen
+    val = oma_ser_orth([10.0])[0]
+    binary = oma_ser_keylen(64, 10.0)
+    ok = abs(val - 0.055) < 0.001
+    print("V10 format-matched OMA at 10 dB: %.5f (binary %.5f)"
+          % (val, binary))
+    ROWS.append(("V10 format-matched OMA at 10 dB", "0.055", "%.5f" % val,
+                 "%.5f" % abs(val - 0.055), "0.001", "PASS" if ok else "FAIL"))
+    return ok
+
+
+def v11_oma_closed_form_vs_mc():
+    """The manuscript says the OMA closed form agrees with Monte Carlo
+    to within one percent. That check had no stored artifact."""
+    from sse_lib import oma_ser, oma_ser_mc
+    cf = oma_ser([16.0])[0]
+    mc = oma_ser_mc([16.0], frames=2_000_000)[0]
+    rel = abs(cf - mc) / mc
+    ok = rel < 0.01
+    print("V11 OMA closed form %.6f vs Monte Carlo %.6f (%.2f%%)"
+          % (cf, mc, 100 * rel))
+    ROWS.append(("V11 OMA closed form vs Monte Carlo", "%.6f" % mc,
+                 "%.6f" % cf, "%.4f" % rel, "0.01", "PASS" if ok else "FAIL"))
+    return ok
+
+
 def main():
     print(f"config d={D} U={U} V={V}\n")
     results = {
@@ -325,6 +384,8 @@ def main():
         "V7": v7_symbolic_identities(),
         "V8": v8_cross_period_terms(),
         "V9": v9_score_variance_ratio(),
+        "V10": v10_format_matched_oma(),
+        "V11": v11_oma_closed_form_vs_mc(),
     }
     print("\nsummary:", {k: ("PASS" if v else "FAIL") for k, v in results.items()})
     print("ALL PASS" if all(results.values()) else "SOME FAILED")

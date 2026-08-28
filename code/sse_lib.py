@@ -309,6 +309,44 @@ def oma_ser(snr_db_list, bits: int = 16, n_grid: int = 200_000):
     return out
 
 
+def oma_ser_orth(snr_db_list, P: int = 4, vu: int = 16, L: int = 64,
+                 n_h: int = 20_000, n_z: int = 2001):
+    """Format-matched OMA reference.
+
+    The binary reference of oma_ser_keylen spends 16 of its L exclusive
+    dimensions on antipodal bits, a one-bit-per-dimension format inside
+    a log2(V)/L = 0.25 bit-per-dimension budget. The better uncoded use
+    of the same allocation is the format the proposed scheme itself
+    uses: P orthogonal decisions among vu candidates, each over L/P
+    exclusive dimensions, which needs exactly vu = L/P of them and so
+    fits the allocation with nothing to spare.
+
+    Energy accounting matches oma_ser, where one unit of energy on a
+    dimension gives 2Es/N0 = snr, so an L-dimension user spending its L
+    units on P symbols puts L/P units in each. Given the fading gain h
+    the correct matched-filter output is N(h sqrt(Es), N0/2) against
+    vu-1 outputs N(0, N0/2), so a digit is right with probability
+    E_z[Phi(z + h sqrt((L/P) snr))^(vu-1)] and the index is right when
+    all P digits are.
+    """
+    from scipy.special import log_ndtr
+    x = (np.arange(n_h) + 0.5) / n_h
+    h = np.sqrt(-np.log(1.0 - x))                    # h^2 ~ Exp(1)
+    z = np.linspace(-8.0, 8.0, n_z)
+    phi = np.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+    out = []
+    for s in snr_db_list:
+        a = h * math.sqrt((L / P) * 10.0 ** (s / 10.0))
+        pc = np.empty_like(a)
+        for i in range(0, a.size, 2048):             # bound the working set
+            blk = a[i:i + 2048][:, None]
+            pc[i:i + 2048] = np.trapezoid(
+                phi * np.exp((vu - 1) * log_ndtr(z[None, :] + blk)),
+                z, axis=1)
+        out.append(float(np.mean(1.0 - pc ** P)))
+    return out
+
+
 @torch.no_grad()
 def oma_ser_mc(snr_db_list, bits: int = 16, frames: int = 2_000_000,
                chunk: int = 200_000, seed: int = 777):
