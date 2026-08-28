@@ -88,15 +88,15 @@ LBL = {
     "legit": "KM (str.)",
     "legit_learned": "KM (lrn.)",
     "oma": "OMA",
-    "eve_pub": "Eavesdropper, public masks",
-    "eve_key": "Eavesdropper",     # the wrong-key condition is in the caption
+    "eve_pub": "Outsider, public masks",
+    "eve_key": "Outsider, KM (str.)",     # the wrong-key condition is in the caption
     "chance": "Random guess",
     "nojam": "No jammer",
     "mask": "KM (str.)",
     "perm": "Permutation key",
     "pad": "Index cipher",
-    "insider": "Insider",
-    "outsider": "Outsider",
+    "insider": "Insider, KM (str.)",
+    "outsider": "Outsider, KM (str.)",
 }
 # deliberate-layering style for the LOWER of two coinciding curves
 UNDER = dict(lw=2.6, alpha=0.85)          # thick filled line, layered under
@@ -231,8 +231,7 @@ def main_legit(snr_db="10"):
 LEGEND_ORDER = [
     "KM (str.)", "KM (lrn.)",
     "Public masks", "Permutation key", "Index cipher", "OMA",
-    "Eavesdropper", "Eavesdropper, keyed", "Eavesdropper, public masks",
-    "Outsider", "Insider",
+    "Outsider, KM (str.)", "Outsider, public masks", "Insider, KM (str.)",
     "No jammer", "Random guess",
 ]
 
@@ -339,7 +338,7 @@ def fig_snr():
                 label=LBL["eve_pub"])
     # this figure carries two eavesdroppers, so the bare label of the
     # key-length figure would not tell them apart
-    ax.semilogy(x, col(r, "eve_wrong"), **STY["eve"], label="Eavesdropper, keyed")
+    ax.semilogy(x, col(r, "eve_wrong"), **STY["eve"], label=LBL["eve_key"])
     # the chance level lies within 3.5e-4 of the wrong-key curve, so it is
     # drawn for reference but left out of the legend, which the caption
     # names instead; five long entries leave this figure no clear corner
@@ -443,7 +442,7 @@ def fig_sens():
     chance = float(load("sec_snr.csv")[0]["chance"])
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
     ax.set_xlabel("Fraction of the key recovered")
-    ax.set_ylabel("Eavesdropper SER")
+    ax.set_ylabel("Outsider SER")
     ax.set_xlim(0, 1)
     place_legend(ax)
     save(fig, "fig_sec_sens")
@@ -464,8 +463,12 @@ def fig_brute():
     rb = load("sec_brute_learned.csv")
     ax.semilogx(col(rb, "K"), col(rb, "ser_mask"), **STY["km_lrn"],
                 markevery=(1, 3), label=LBL["legit_learned"])
+    # the same chance reference the sensitivity figure carries, so a
+    # curve sitting at the top is read as learning nothing
+    ax.axhline(float(load("sec_snr.csv")[0]["chance"]), color=C_CH,
+               ls=":", lw=0.9, label=LBL["chance"])
     ax.set_xlabel("Number of key guesses $K$")
-    ax.set_ylabel("Eavesdropper SER")
+    ax.set_ylabel("Outsider SER")
     ax.set_ylim(0.0, 1.05)      # keep the reference line off the spine
     place_legend(ax)
     save(fig, "fig_sec_brute")
@@ -492,6 +495,9 @@ def fig_real():
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("TER")
     ax.set_xlim(min(x), max(x))
+    # the adversary labels name their realization, which is wide, so
+    # the axis opens below the data to give the legend a clear corner
+    ax.set_ylim(bottom=3e-5)
     place_legend(ax)
     save(fig, "fig_sec_real")
 
@@ -502,14 +508,19 @@ def fig_kpa():
     comparison scheme."""
     r = load("kpa.csv")
     fig, ax = plt.subplots()
-    sty = {0.0: (C_LEGIT, "o"), 10.0: (C_EVE, "s"),
-           20.0: (C_PUB, "v")}
-    for off, (snr, (c, mk)) in enumerate(sty.items()):
+    # the three curves are one scheme at three collection SNRs, so the
+    # colour stays the scheme's and the marker and line carry the SNR
+    # one scheme, three collection SNRs, so the marker stays the
+    # scheme's and only the line style and the fill carry the SNR;
+    # borrowing another scheme's marker shape would read as that scheme
+    sty = {0.0: ("o", "-"), 10.0: ("o", "--"), 20.0: ("o", ":")}
+    for off, (snr, (mk, ls)) in enumerate(sty.items()):
         rows = [row for row in r if float(row["snr_db"]) == snr]
         n = [float(row["n_frames"]) for row in rows]
         ser = [float(row["eve_ser"]) for row in rows]
-        ax.semilogx(n, ser, color=c, marker=mk, ls="-",
-                    markevery=(off, 4), markerfacecolor="none" if off else c,
+        ax.semilogx(n, ser, color=STY["km_str"]["color"], marker=mk, ls=ls,
+                    markevery=(off, 4),
+                    markerfacecolor="none" if off else None,
                     label=f"KM (str.), {int(snr)} dB")
         if snr == 10.0:
             kl = [q for q in load("kpa_learned.csv")
@@ -528,8 +539,12 @@ def fig_kpa():
     # eavesdropper curves, namely the four-user average of eval_ser_sse
     # in the main configuration, rather than the user-1 convention of the
     # scheme-comparison table
+    # the same chance reference the sensitivity figure carries, so a
+    # curve sitting at the top is read as learning nothing
+    ax.axhline(float(load("sec_snr.csv")[0]["chance"]), color=C_CH,
+               ls=":", lw=0.9, label=LBL["chance"])
     ax.set_xlabel("Known-plaintext frames $N$")
-    ax.set_ylabel("Eavesdropper SER")
+    ax.set_ylabel("Outsider SER")
     ax.set_xscale("log", base=2)
     # the 0 dB curve sweeps the upper-right, so anchor the legend at the
     # top edge past the steep drops, above every curve at large N
