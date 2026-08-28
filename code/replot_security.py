@@ -56,27 +56,46 @@ plt.rcParams.update({
 })
 AXES_RECT = dict(left=0.215, right=0.970, top=0.955, bottom=0.225)
 
-C_LEGIT = "#c0392b"
-C_EVE = "#2c5fa8"
-C_OMA = "#7f8c8d"
-C_CH = "#95a5a6"
-C_MATCH = "#8e44ad"
-C_PUB = "#16a085"
-C_LEARN = "#d98c00"
+C_LEGIT = "#c0392b"     # KM, structured keys
+C_LEARN = "#d98c00"     # KM, learned keys
+C_OMA = "#7f8c8d"       # orthogonal multiple access
+C_PUB = "#16a085"       # public masks
+C_PERM = "#8e44ad"      # permutation key
+C_PAD = "#a0522d"       # index cipher
+C_EVE = "#2c5fa8"       # an adversary of KM
+C_CH = "#95a5a6"        # chance and reference levels
+C_MATCH = C_PUB         # the matched jammer is what public masks admit
+
+# One entry per curve the figures draw. Colour identifies the scheme and
+# line style the role: solid for a legitimate rate, dashed for an
+# adversary, dash-dot for a comparison scheme, dotted for a reference.
+# Every figure reads its curves from here, so a reader who learns a
+# curve in one figure reads the same curve in the next.
+STY = {
+    "km_str":  dict(color=C_LEGIT, marker="o", ls="-"),
+    "km_lrn":  dict(color=C_LEARN, marker="d", ls="-"),
+    "oma":     dict(color=C_OMA, marker="^", ls=":"),
+    "pub":     dict(color=C_PUB, marker="v", ls="-."),
+    "perm":    dict(color=C_PERM, marker="X", ls="--"),
+    "pad":     dict(color=C_PAD, marker="P", ls="-."),
+    "eve":     dict(color=C_EVE, marker="s", ls="--"),
+    "insider": dict(color=C_EVE, marker="v", ls="-."),
+}
 
 # fixed label dictionary: tables and prose copy these strings verbatim
 LBL = {
-    "legit": "Legitimate",
-    "legit_learned": "Learned keys",
+    "legit": "KM (structured)",
+    "legit_learned": "KM (learned)",
     "oma": "OMA",
     "eve_pub": "Eavesdropper, public masks",
     "eve_key": "Eavesdropper",     # the wrong-key condition is in the caption
     "chance": "Random guess",
     "nojam": "No jammer",
-    "mask": "Keyed masking",
+    "mask": "KM (structured)",
     "perm": "Permutation key",
     "pad": "Index cipher",
     "insider": "Insider",
+    "legit_ref": "Legitimate rate",
     "outsider": "Outsider",
 }
 # deliberate-layering style for the LOWER of two coinciding curves
@@ -207,7 +226,7 @@ def main_legit(snr_db="10"):
 def place_legend(ax, cands=("lower left", "upper left", "center left",
                            "center right", "lower center", "upper right",
                            "upper center", "center", "lower right"),
-                 sizes=(9.2, 8.8, 8.4, 8.0, 7.6, 7.2), ncol=1):
+                 sizes=(9.2, 8.8, 8.4, 8.0, 7.6, 7.2, 6.8, 6.4), ncol=1):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
@@ -271,23 +290,21 @@ def fig_snr():
     # legitimate and the public-mask eavesdropper coincide by
     # construction (same physical layer, public masks decode alike), so
     # the pair is deliberately layered; OMA is separate at this frame
-    ax.semilogy(x, col(r, "legit"), color=C_LEGIT, marker="o", ls="-",
+    ax.semilogy(x, col(r, "legit"), **STY["km_str"],
                 markevery=(0, 3), label=LBL["legit"], **UNDER)
     # the learned family is the other end of the key-space trade-off,
     # so the figure carries what it costs at every SNR
     rl = load("sec_snr_learned.csv")
-    ax.semilogy(col(rl, "snr_db"), col(rl, "legit"), color=C_LEARN,
-                marker="d", ls="-", markevery=(2, 3),
-                label=LBL["legit_learned"])
-    ax.semilogy(x, col(r, "oma"), color=C_OMA, marker="^", ls=":",
+    ax.semilogy(col(rl, "snr_db"), col(rl, "legit"), **STY["km_lrn"],
+                markevery=(2, 3), label=LBL["legit_learned"])
+    ax.semilogy(x, col(r, "oma"), **STY["oma"],
                 markevery=(1, 3), label=LBL["oma"], **OVER)
-    ax.semilogy(x, col(r, "eve_public"), color=C_PUB, marker="v",
+    ax.semilogy(x, col(r, "eve_public"), color=STY["pub"]["color"], marker=STY["pub"]["marker"],
                 ls="none", markevery=(2, 3), markerfacecolor="none",
                 label=LBL["eve_pub"])
     # this figure carries two eavesdroppers, so the bare label of the
     # key-length figure would not tell them apart
-    ax.semilogy(x, col(r, "eve_wrong"), color=C_EVE, marker="s", ls="--",
-                label="Eavesdropper, keyed")
+    ax.semilogy(x, col(r, "eve_wrong"), **STY["eve"], label="Eavesdropper, keyed")
     # the chance level lies within 3.5e-4 of the wrong-key curve, so it is
     # drawn for reference but left out of the legend, which the caption
     # names instead; five long entries leave this figure no clear corner
@@ -295,10 +312,9 @@ def fig_snr():
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
-    # the five-entry legend needs more clear space than the four-entry
-    # one did, so the axis opens a further decade below the data; the
-    # lower-left is empty because every curve decays
-    ax.set_ylim(bottom=2e-5)
+    # most of a decade below the data leaves the lower-left genuinely
+    # empty, which is what gives the legend a clear berth
+    ax.set_ylim(bottom=2e-4)
     place_legend(ax)
     save(fig, "fig_sec_snr")
 
@@ -310,14 +326,16 @@ def fig_keylen():
     r = load("sec_keylen.csv")
     x = col(r, "L", int)
     fig, ax = plt.subplots()
-    ax.semilogy(x, col(r, "legit_ser"), color=C_LEGIT, marker="o", ls="-",
-                label=LBL["legit"])
+    ax.semilogy(x, col(r, "legit_ser"), **STY["km_str"], label=LBL["legit"])
+    rl = load("sec_keylen_learned.csv")
+    ax.semilogy(col(rl, "L", int), col(rl, "legit_ser"), **STY["km_lrn"], label=LBL["legit_learned"])
     op = [(l, v) for l, v in zip(x, col(r, "oma")) if not math.isnan(v)]
-    ax.semilogy([p[0] for p in op], [p[1] for p in op], color=C_OMA,
-                marker="^", ls=":", label=LBL["oma"])
-    ax.semilogy(x, col(r, "eve_ser"), color=C_EVE, marker="s", ls="--",
-                label=LBL["eve_key"])
+    ax.semilogy([p[0] for p in op], [p[1] for p in op], **STY["oma"], label=LBL["oma"])
+    ax.semilogy(x, col(r, "eve_ser"), **STY["eve"], label=LBL["eve_key"])
     ax.set_ylim(top=22.0)    # headroom above the flat eavesdropper curve
+    # an error rate cannot exceed one, and the room below the data holds
+    # the legend, since every curve decays to the right
+    ax.set_ylim(top=1.4, bottom=1.2e-2)
     ax.set_xlabel("Key length $L$")
     ax.set_ylabel("SER")
     ax.set_xscale("log", base=2)
@@ -335,14 +353,17 @@ def fig_jam():
     x = col(r, "jsr_db")
     me = max(1, len(x) // 8)
     fig, ax = plt.subplots()
-    ax.plot(x, col(r, "matched"), color=C_MATCH, marker="P", ls="--",
+    rj = load("sec_jam_learned.csv")
+    ax.plot(col(rj, "jsr_db"), col(rj, "blind"), **STY["km_lrn"],
+            markevery=(1, me), label=LBL["legit_learned"])
+    ax.plot(x, col(r, "matched"), **STY["pub"],
             markevery=me, label="Public masks")
-    ax.plot(x, col(r, "oma_targeted"), color=C_PUB, marker="^", ls=":",
+    ax.plot(x, col(r, "oma_targeted"), **STY["oma"],
             markevery=me, label=LBL["oma"])
     # the two blind curves agree to 0.002; deliberate layering
-    ax.plot(x, col(r, "blind"), color=C_LEGIT, marker="o", ls="-",
+    ax.plot(x, col(r, "blind"), **STY["km_str"],
             markevery=(0, me), label=LBL["mask"], **UNDER)
-    ax.plot(x, col(r, "perm_blind"), color=C_EVE, marker="s", ls="-.",
+    ax.plot(x, col(r, "perm_blind"), **STY["perm"],
             markevery=(me // 2, me), label=LBL["perm"], **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
     # the unjammed reference is named in the caption rather than in the
@@ -367,11 +388,11 @@ def fig_sens():
     r = load("sec_sens_cmp.csv")
     x = col(r, "frac")
     fig, ax = plt.subplots()
-    ax.plot(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
+    ax.plot(x, col(r, "ser_mask"), **STY["km_str"],
             markevery=(0, 3), label=LBL["mask"], **UNDER)
-    ax.plot(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
+    ax.plot(x, col(r, "ser_perm"), **STY["perm"],
             markevery=(1, 3), label=LBL["perm"], **OVER)
-    ax.plot(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
+    ax.plot(x, col(r, "ser_pad"), **STY["pad"],
             markevery=(2, 3), lw=1.2, mfc="none", label=LBL["pad"])
     # the chance level comes from the stored curve, not from a second
     # copy of the configuration constants
@@ -379,7 +400,7 @@ def fig_sens():
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
     # the narration reads these curves against the legitimate rate
     ax.axhline(main_legit(), color=C_OMA, ls=(0, (4, 2)), lw=0.9,
-               label=LBL["legit"])
+               label=LBL["legit_ref"])
     ax.set_xlabel("Fraction of the key recovered")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xlim(0, 1)
@@ -393,15 +414,15 @@ def fig_brute():
     r = load("sec_brute_cmp.csv")
     x = col(r, "K")
     fig, ax = plt.subplots()
-    ax.semilogx(x, col(r, "ser_perm"), color=C_EVE, marker="s", ls="--",
+    ax.semilogx(x, col(r, "ser_perm"), **STY["perm"],
                 markevery=(0, 3), label=LBL["perm"], **UNDER)
-    ax.semilogx(x, col(r, "ser_pad"), color=C_PUB, marker="v", ls="-.",
+    ax.semilogx(x, col(r, "ser_pad"), **STY["pad"],
                 markevery=(1, 3), label=LBL["pad"], **OVER)
-    ax.semilogx(x, col(r, "ser_mask"), color=C_LEGIT, marker="o", ls="-",
+    ax.semilogx(x, col(r, "ser_mask"), **STY["km_str"],
                 markevery=(2, 3), label=LBL["mask"])
     legit = main_legit()
     ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
-               label=LBL["legit"])
+               label=LBL["legit_ref"])
     ax.set_xlabel("Number of key guesses $K$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_ylim(0.0, 1.05)      # keep the reference line off the spine
@@ -415,13 +436,13 @@ def fig_real():
     fig, ax = plt.subplots()
     # insider and outsider still nearly coincide and are layered; the
     # legitimate and OMA curves are separate at this frame
-    ax.semilogy(x, col(r, "ter_legit"), color=C_LEGIT, marker="o", ls="-",
+    ax.semilogy(x, col(r, "ter_legit"), **STY["km_str"],
                 markevery=(0, 2), label=LBL["legit"], **UNDER)
-    ax.semilogy(x, col(r, "ter_oma"), color=C_OMA, marker="^", ls=":",
+    ax.semilogy(x, col(r, "ter_oma"), **STY["oma"],
                 markevery=(1, 2), label=LBL["oma"], **OVER)
-    ax.semilogy(x, col(r, "ter_insider"), color=C_PUB, marker="v", ls="-.",
+    ax.semilogy(x, col(r, "ter_insider"), **STY["insider"],
                 markevery=(0, 2), label=LBL["insider"], **UNDER)
-    ax.semilogy(x, col(r, "ter_eve"), color=C_EVE, marker="s", ls="--",
+    ax.semilogy(x, col(r, "ter_eve"), **STY["eve"],
                 markevery=(1, 2), label=LBL["outsider"], **OVER)
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("TER")
@@ -444,7 +465,14 @@ def fig_kpa():
         ser = [float(row["eve_ser"]) for row in rows]
         ax.semilogx(n, ser, color=c, marker=mk, ls="-",
                     markevery=(off, 4), markerfacecolor="none" if off else c,
-                    label=LBL["mask"] + f", {int(snr)} dB")
+                    label=f"KM (str.), {int(snr)} dB")
+        if snr == 10.0:
+            kl = [q for q in load("kpa_learned.csv")
+                  if float(q["snr_db"]) == snr]
+            ax.semilogx([float(q["n_frames"]) for q in kl],
+                        [float(q["eve_ser"]) for q in kl], **STY["km_lrn"],
+                        markevery=(2, 4),
+                        label=f"KM (lrn.), {int(snr)} dB")
     try:
         p = load("pkpa.csv")
         ax.semilogx(col(p, "n_frames"), col(p, "eve_ser"), color=C_MATCH,
@@ -458,7 +486,7 @@ def fig_kpa():
     # scheme-comparison table
     legit = main_legit()
     ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
-               label=LBL["legit"])
+               label=LBL["legit_ref"])
     ax.set_xlabel("Known-plaintext frames $N$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xscale("log", base=2)

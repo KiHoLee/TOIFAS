@@ -11,15 +11,17 @@ from pathlib import Path
 DATA = Path(__file__).resolve().parents[1] / "data"
 
 NAME = {
-    "proposed": r"\textbf{Proposed keyed masking}",
+    "proposed": r"\textbf{KM (structured)}",
+    "proposed_learned": r"\textbf{KM (learned)}",
     "public_mask": "Public masks",
     "perm_key": r"Permutation key~\cite{chen2025shufflingtifs}",
     "index_cipher": "Index cipher",
     "oma_plain": "OMA (no encryption)",
     "random": "Random",
-    "hadamard": "Walsh-Hadamard",
-    "learned": "Learned",
-    "learned_reg": r"Regularized~\eqref{eq:regloss}",
+    "hadamard": "Structured",
+    "learned": "Learned, plain",
+    "learned_reg": r"Learned, regularized~\eqref{eq:regloss}",
+    "invariant_learned": r"\textbf{Invariant, learned keys}",
 }
 RECEIVER = {
     "legit": "Legitimate", "oma": "OMA",
@@ -57,7 +59,8 @@ def cell(x: str, bold: bool, wide: bool = False) -> str:
 def compare_table():
     print("% Table: scheme comparison (from sec_compare.csv)")
     rows = list(csv.DictReader(open(DATA / "sec_compare.csv")))
-    order = ["public_mask", "perm_key", "index_cipher", "oma_plain", "proposed"]
+    order = ["public_mask", "perm_key", "index_cipher", "oma_plain",
+             "proposed", "proposed_learned"]
     rows.sort(key=lambda r: order.index(r["scheme"]))
     # stage_E does not jam the orthogonal reference, because the jammer an
     # OMA user faces is targeted at public slots rather than mask-matched
@@ -67,13 +70,13 @@ def compare_table():
            for r in csv.DictReader(open(DATA / "sec_jam_cmp.csv"))}
     oma_jam = jam[0.0]["oma_targeted"]
     for r in rows:
-        b = r["scheme"] == "proposed"
+        b = r["scheme"].startswith("proposed")
         if r["scheme"] == "oma_plain" and f3(r["jam0_ser"]) == "--":
             r["jam0_ser"] = oma_jam
         # four decimals would still print 1.0000 here, so the column
         # stays at three and the caption names the chance level
         cells = [cell(r[k], b) for k in
-                 ("legit_ser", "eve_out", "eve_in", "jam0_ser")]
+                 ("eve_out", "eve_in", "jam0_ser")]
         print(f"{NAME[r['scheme']]} & " + " & ".join(cells) + r" \\")
 
 
@@ -84,7 +87,7 @@ def maskfam_table():
         # emphasized the same way the proposed row is in the comparison
         b = r["family"] == "hadamard"
         cells = [cell(r[k], b) for k in
-                 ("legit_ser", "eve_ser", "eve_ones_ser", "mask_xcorr")]
+                 ("legit_ser", "eve_ser", "mask_xcorr")]
         name = NAME[r["family"]]
         if b:
             name = r"\textbf{" + name + "}"
@@ -94,8 +97,8 @@ def maskfam_table():
 def refresh_tables():
     print("% Table: key refresh (from refresh_summary.csv)")
     for r in csv.DictReader(open(DATA / "refresh_summary.csv")):
-        b = r["scheme"] == "Invariant"
-        name = r"\textbf{Invariant}" if b else r["scheme"]
+        b = r["scheme"].startswith("Invariant")
+        name = (r"\textbf{" + r["scheme"] + "}") if b else r["scheme"]
         f = (lambda t: r"\mathbf{" + t + "}") if b else (lambda t: t)
         print(f"{name} & ${f(format(float(r['legit']), '.3f'))}$ & "
               f"${f(format(float(r['eve']), '.4f'))}$ & "
