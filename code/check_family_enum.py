@@ -1,25 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Ciphertext-only enumeration of the structured key family.
+"""Key-space attacks against both key families.
 
-Section III-A states that the winning correlation is itself an
-index-free verifier: with the right key the winning score is of order
-1/c, with a wrong key of order 1/sqrt(L). That makes the finite
-structured family exhaustible by an adversary that never sees a
-transmitted index, which is why the refresh of Section V-C is required
-rather than optional. This script is the measurement behind that
-claim.
+The winning correlation is an index-free verifier: with the right key
+the winning score is of order 1/c, with a wrong key of order
+1/sqrt(L). Two attacks follow, and both need a LIST to rank.
 
-The attack. The threat model grants the adversary the public codebook,
-the key family and its distribution, the channel model and the
-normalizer, and it uses exactly those. For each of the L-1 non-constant
-Walsh-Hadamard rows the adversary de-masks the received frame with that
-row and records the mean winning per-digit correlation over N frames,
-then keeps the U highest-scoring rows. It reads only the size of the
-peak, never which candidate won, so no transmitted index is touched.
+  outsider  Rank the L-1 non-constant Walsh-Hadamard rows and keep the
+            U best. Works only if the true keys are in that list.
+  insider   A legitimate user holding m_v ranks m_v .* (row). Walsh
+            rows are closed under the elementwise product, so this list
+            contains every other user's key. The per-block sign draw
+            cancels in m_u .* m_v, so the refresh does not remove it.
 
-It also runs the same attack against a refreshed key. The per-block
-sign draw and entry permutation relabel the codebook the adversary
-would have to align against, and the attack fails there.
+The structured family is countable and closed under the product, so
+both attacks apply to it. A learned mask is a real vector in R^L, so
+neither list contains the key and both attacks fail. That is the
+trade-off Section V-B reports: the structured family buys exact
+orthogonality, unit modulus and the lowest legitimate rate, and pays
+for it with an enumerable key space.
 
 Writes data/family_enum.csv.
 """
@@ -30,7 +28,7 @@ from pathlib import Path
 
 import torch
 
-from exp_full import base_keys, main_model
+from exp_full import MAIN_D, base_keys, get_model, main_model
 from sse_lib import DEVICE, rayleigh_gain, snr_to_sigma2, write_csv
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -39,16 +37,12 @@ SEED = 8131
 
 
 @torch.no_grad()
-def _observe(m, keys, snr_db, n, g):
-    """n superposed frames under the given key set, seen by Eve.
-
-    Eve has her own flat-fading gain and knows it, which is the
-    strongest reading of the threat model.
-    """
-    Bn = m.unit_codebook()
+def _observe(m, keys, book, snr_db, n, g):
+    """n superposed frames under the given keys and codebook, seen by an
+    adversary with its own flat-fading gain, which it knows."""
     idx = torch.randint(m.vu, (n, m.users, m.P), generator=g, device=DEVICE)
-    e = Bn[idx] / math.sqrt(m.P)                     # (n,U,P,L)
-    y = (e * keys[None, :, None, :]).sum(dim=1) / m.c   # (n,P,L)
+    e = book[idx] / math.sqrt(m.P)
+    y = (e * keys[None, :, None, :]).sum(dim=1) / m.c
     h = rayleigh_gain((n, 1, 1), device=DEVICE)
     sig = float(snr_to_sigma2(torch.tensor(snr_db), m.d).sqrt())
     rx = h * y + sig * torch.randn(n, m.P, m.L, generator=g, device=DEVICE)
@@ -56,56 +50,78 @@ def _observe(m, keys, snr_db, n, g):
 
 
 @torch.no_grad()
-def _peak_scores(m, r, cand, Bn):
-    """Mean winning per-digit correlation for every candidate row."""
+def _peak_scores(m, r, cand, book):
+    """Mean winning per-digit correlation for every candidate key. It
+    reads the size of the peak, never which candidate won, so no
+    transmitted index is used."""
     out = torch.empty(cand.shape[0])
     for k in range(cand.shape[0]):
-        z = torch.einsum("npl,vl->npv", r * cand[k][None, None, :], Bn)
-        out[k] = z.max(dim=2).values.mean()
+        out[k] = torch.einsum("npl,vl->npv", r * cand[k][None, None, :],
+                              book).max(dim=2).values.mean()
     return out
+
+
+def _recovers(rec, target, L):
+    return any(float((rec[i] @ target).abs()) / L > 0.99
+               for i in range(rec.shape[0]))
+
+
+@torch.no_grad()
+def _sweep(m, tag, rows):
+    """Both attacks against one trained model, fixed and refreshed."""
+    keys, book0 = m.masks(), m.unit_codebook()
+    walsh = base_keys(m.L - 1, m.L).to(DEVICE)
+    L, U = m.L, m.users
+
+    for snr in (0.0, 10.0, 20.0):
+        for n in (1, 2, 4):
+            out = ins = 0
+            for t in range(TRIALS):
+                g = torch.Generator(device=DEVICE).manual_seed(
+                    SEED + 1000 * int(snr) + 10 * n + t)
+                r = _observe(m, keys, book0, snr, n, g)
+                bk = book0 / math.sqrt(m.P)
+                top = _peak_scores(m, r, walsh, bk).topk(U).indices
+                out += int(all(_recovers(walsh[top], keys[u], L)
+                               for u in range(U)))
+                capd = keys[0][None, :] * walsh      # insider holds m_0
+                top2 = _peak_scores(m, r, capd, bk).topk(U).indices
+                ins += int(_recovers(capd[top2], keys[1], L))
+            rows.append((tag, "fixed", snr, n, out / TRIALS, ins / TRIALS))
+            print("  %-10s fixed      %4.0f dB N=%d  outsider %.3f  "
+                  "insider %.3f" % (tag, snr, n, out / TRIALS, ins / TRIALS))
+
+    # the refresh installs m_u = xi(eps .* m_u^0) and e_i = xi(e_i^0)
+    out = ins = 0
+    for t in range(TRIALS):
+        g = torch.Generator(device=DEVICE).manual_seed(SEED + 77 + t)
+        xi = torch.randperm(L, generator=g, device=DEVICE)
+        eps = torch.randint(2, (L,), generator=g, device=DEVICE) * 2.0 - 1.0
+        rk = (keys * eps[None, :])[:, xi]
+        book = book0[:, xi]
+        bk = book / math.sqrt(m.P)
+        r = _observe(m, rk, book, 10.0, 2, g)
+        top = _peak_scores(m, r, walsh, bk).topk(U).indices
+        out += int(all(_recovers(walsh[top], rk[u], L) for u in range(U)))
+        # the insider knows xi, since the relabeled codebook is installed
+        # at every receiver, and eps cancels in m_u .* m_v
+        capd = rk[0][None, :] * walsh[:, xi]
+        top2 = _peak_scores(m, r, capd, bk).topk(U).indices
+        ins += int(_recovers(capd[top2], rk[1], L))
+    rows.append((tag, "refreshed", 10.0, 2, out / TRIALS, ins / TRIALS))
+    print("  %-10s refreshed  10 dB N=2  outsider %.3f  insider %.3f"
+          % (tag, out / TRIALS, ins / TRIALS))
 
 
 def run():
     torch.manual_seed(SEED)
-    m = main_model()   # trains, so not under no_grad
-    _attack(m)
-
-
-@torch.no_grad()
-def _attack(m):
-    keys = m.masks()                                 # (U,L) the true rows
-    cand = base_keys(m.L - 1, m.L).to(DEVICE)        # every non-constant row
-    Bn = m.unit_codebook() / math.sqrt(m.P)
     rows = []
-
-    for snr in (0.0, 10.0, 20.0):
-        for n in (1, 2, 4):
-            hit = 0
-            for t in range(TRIALS):
-                g = torch.Generator(device=DEVICE).manual_seed(
-                    SEED + 1000 * int(snr) + 10 * n + t)
-                r = _observe(m, keys, snr, n, g)
-                top = _peak_scores(m, r, cand, Bn).topk(m.users).indices
-                hit += int(set(int(i) for i in top) == set(range(m.users)))
-            rows.append((snr, n, "fixed", hit / TRIALS))
-            print("  %4.0f dB  N=%d  fixed      recovery %.3f"
-                  % (snr, n, hit / TRIALS))
-
-    hit = 0
-    for t in range(TRIALS):
-        g = torch.Generator(device=DEVICE).manual_seed(SEED + 77 + t)
-        perm = torch.randperm(m.L, generator=g, device=DEVICE)
-        sign = torch.randint(2, (m.L,), generator=g,
-                             device=DEVICE) * 2.0 - 1.0
-        rk = (keys * sign[None, :])[:, perm]
-        r = _observe(m, rk, 10.0, 2, g)
-        top = _peak_scores(m, r, cand, Bn).topk(m.users).indices
-        hit += int(set(int(i) for i in top) == set(range(m.users)))
-    rows.append((10.0, 2, "refreshed", hit / TRIALS))
-    print("    10 dB  N=2  refreshed  recovery %.3f" % (hit / TRIALS))
-
+    _sweep(main_model(), "structured", rows)          # keys frozen to Walsh
+    _sweep(get_model(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1),
+           "learned", rows)                           # keys trained in R^L
     write_csv(DATA / "family_enum.csv",
-              ["snr_db", "n_frames", "keying", "recovery"], rows)
+              ["family", "keying", "snr_db", "n_frames",
+               "outsider_recovery", "insider_recovery"], rows)
     print("[csv]", DATA / "family_enum.csv")
 
 

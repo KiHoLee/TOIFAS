@@ -58,6 +58,7 @@ python exp_infotheory.py     # mutual information and equivocation
 python exp_semantic.py       # semantic-similarity leakage
 python exp_users_csi.py      # load and channel-estimate sweeps
 python check_cov_attack.py   # ciphertext-only covariance attack
+python diag_maskdegen.py     # learned-key support degeneracy
 python check_family_enum.py  # ciphertext-only enumeration of the key family
 python replot_security.py    # all figures from the CSVs
 python make_tables.py        # LaTeX rows of the result tables
@@ -98,6 +99,9 @@ Logarithms in an entropy or an information rate are base two.
 | Permutation-variant check | `exp_full.stage_M` | `perm_variant.csv` |
 
 Run one stage on its own with `python code/exp_full.py stage_B`, or the whole chain with no argument.
+| Key-space attacks (Sec. VI-F) | `check_family_enum` | `family_enum.csv` |
+| Covariance attack (Sec. IV) | `check_cov_attack` | `cov_attack.csv` |
+| Learned-key degeneracy (Sec. VI-F) | `diag_maskdegen` | `maskdegen.csv` |
 | Closed-form and symbolic checks | `verify_math` | `verify_math.csv` |
 
 ## Security scope

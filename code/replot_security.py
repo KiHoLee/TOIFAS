@@ -62,10 +62,12 @@ C_OMA = "#7f8c8d"
 C_CH = "#95a5a6"
 C_MATCH = "#8e44ad"
 C_PUB = "#16a085"
+C_LEARN = "#d98c00"
 
 # fixed label dictionary: tables and prose copy these strings verbatim
 LBL = {
     "legit": "Legitimate",
+    "legit_learned": "Learned keys",
     "oma": "OMA",
     "eve_pub": "Eavesdropper, public masks",
     "eve_key": "Eavesdropper",     # the wrong-key condition is in the caption
@@ -271,6 +273,12 @@ def fig_snr():
     # the pair is deliberately layered; OMA is separate at this frame
     ax.semilogy(x, col(r, "legit"), color=C_LEGIT, marker="o", ls="-",
                 markevery=(0, 3), label=LBL["legit"], **UNDER)
+    # the learned family is the other end of the key-space trade-off,
+    # so the figure carries what it costs at every SNR
+    rl = load("sec_snr_learned.csv")
+    ax.semilogy(col(rl, "snr_db"), col(rl, "legit"), color=C_LEARN,
+                marker="d", ls="-", markevery=(2, 3),
+                label=LBL["legit_learned"])
     ax.semilogy(x, col(r, "oma"), color=C_OMA, marker="^", ls=":",
                 markevery=(1, 3), label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "eve_public"), color=C_PUB, marker="v",
@@ -287,9 +295,10 @@ def fig_snr():
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
-    # most of a decade below the data leaves the lower-left genuinely
-    # empty, which is what gives the four-entry legend a clear berth
-    ax.set_ylim(bottom=2e-4)
+    # the five-entry legend needs more clear space than the four-entry
+    # one did, so the axis opens a further decade below the data; the
+    # lower-left is empty because every curve decays
+    ax.set_ylim(bottom=2e-5)
     place_legend(ax)
     save(fig, "fig_sec_snr")
 

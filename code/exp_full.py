@@ -188,6 +188,28 @@ def main_model(iters=4000, P=4, vu=16, d=MAIN_D, U=4):
                      freeze_W=base_keys(U, d // P))
 
 
+def stage_N():
+    """Fig. 2's learned-family curves.
+
+    The structured family is enumerable and closed under the elementwise
+    product, the learned one is neither, so the paper reports both. This
+    stage runs the same SNR sweep as stage_A with the keys trained in
+    R^L instead of frozen to Walsh-Hadamard rows, at the same frame
+    count, so the two are directly comparable.
+    """
+    print("[N] security vs SNR, learned key family ...")
+    m = get_model(P=4, vu=16, d=MAIN_D, U=4, iters=4000, seed=1)
+    snr = [float(v) for v in range(0, 21, 2)]
+    frames = 800_000
+    legit = eval_ser_sse(m, snr, frames=frames)
+    ew = eve_wrong_mask(m.users, m.L, seed=20260813).to(DEVICE)
+    eve_w = eval_ser_eve(m, ew, snr, frames=frames)
+    write_csv(DATA / "sec_snr_learned.csv",
+              ["snr_db", "legit", "eve_wrong"],
+              [(s, legit[i], eve_w[i]) for i, s in enumerate(snr)])
+    print("   legit:", [f"{v:.2e}" for v in legit])
+
+
 def stage_A():
     print("[A] security vs SNR (V=65536) ...")
     m = main_model()
@@ -856,7 +878,7 @@ def stage_L_gap(rows):
 
 
 CHAIN = ["stage_A", "stage_B", "stage_C", "stage_D", "stage_E", "stage_F",
-         "stage_I", "stage_J", "stage_L", "stage_M"]
+         "stage_I", "stage_J", "stage_L", "stage_M", "stage_N"]
 
 
 def main(names=None):

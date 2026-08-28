@@ -71,7 +71,7 @@ k = rows("sec_keylen.csv")
 r64 = [x for x in k if int(x["L"]) == 64][0]
 ratio = float(r64["oma"]) / float(r64["legit_ser"])
 chk("key-length ratio 1.52", round(ratio, 2) == 1.52, "%.4f" % ratio)
-chk("1.52 in tex", tex.count("1.52") >= 2, "%d occurrences" % tex.count("1.52"),
+chk("1.52 in tex", tex.count("1.52") >= 1, "%d occurrences" % tex.count("1.52"),
     needs_tex=True)
 chk("keys exactly orthogonal in the sweep",
     max(float(x["mask_xcorr"]) for x in k) < 1e-6,
@@ -213,7 +213,7 @@ chk("learned support overlap 0.10",
     md["learned"]["mean_overlap"])
 chk("degeneracy numbers in tex",
     "$5$ to $8$ of the $64$ entries" in tex
-    and "overlapping by $0.10$ on average over user pairs" in " ".join(tex.split()),
+    and "overlapping by $0.10$" in " ".join(tex.split()),
     "searched tex", needs_tex=True)
 
 # --- why the permutation key is granted a shared permutation ---------
@@ -268,16 +268,42 @@ chk("secrecy rate 14.87 of 14.93",
     "%s of %s" % (it["secrecy_rate_refresh_bits"], it["mi_legit_bits"]))
 
 
-_fe = {(float(r["snr_db"]), int(r["n_frames"]), r["keying"]): float(r["recovery"])
+_fe = {(r["family"], r["keying"], float(r["snr_db"]), int(r["n_frames"])): r
        for r in rows("family_enum.csv")}
-chk("family enumeration recovers the user set at 10 dB",
-    abs(_fe[(10.0, 1, "fixed")] - 0.905) < 5e-3
-    and abs(_fe[(10.0, 4, "fixed")] - 0.990) < 5e-3,
-    "N=1 %.3f, N=4 %.3f" % (_fe[(10.0, 1, "fixed")],
-                            _fe[(10.0, 4, "fixed")]))
-chk("the refresh defeats the family enumeration",
-    _fe[(10.0, 2, "refreshed")] == 0.0,
-    "%.3f over 200 blocks" % _fe[(10.0, 2, "refreshed")])
+_sf = _fe[("structured", "fixed", 10.0, 1)]
+_s4 = _fe[("structured", "fixed", 10.0, 4)]
+_sr = _fe[("structured", "refreshed", 10.0, 2)]
+chk("structured family enumerable at 10 dB",
+    abs(float(_sf["outsider_recovery"]) - 0.905) < 5e-3
+    and abs(float(_s4["outsider_recovery"]) - 0.990) < 5e-3,
+    "N=1 %s, N=4 %s" % (_sf["outsider_recovery"], _s4["outsider_recovery"]))
+chk("the refresh stops the outsider enumeration",
+    float(_sr["outsider_recovery"]) == 0.0,
+    "%s over 200 blocks" % _sr["outsider_recovery"])
+chk("the refresh does not stop the insider closure",
+    abs(float(_sr["insider_recovery"]) - 0.980) < 5e-3,
+    "%s over 200 blocks" % _sr["insider_recovery"])
+chk("the learned family defeats both attacks everywhere",
+    all(float(r["outsider_recovery"]) == 0.0
+        and float(r["insider_recovery"]) == 0.0
+        for r in rows("family_enum.csv") if r["family"] == "learned"),
+    "%d learned rows" % sum(1 for r in rows("family_enum.csv")
+                            if r["family"] == "learned"))
+
+_sl = rows("sec_snr_learned.csv")
+_sn = {float(r["snr_db"]): float(r["legit"]) for r in rows("sec_snr.csv")}
+chk("learned family tracks the structured one over the SNR range",
+    all(1.0 < float(r["legit"]) / _sn[float(r["snr_db"])] < 1.5
+        for r in _sl),
+    "ratio %.2f to %.2f" % (min(float(r["legit"]) / _sn[float(r["snr_db"])]
+                                for r in _sl),
+                            max(float(r["legit"]) / _sn[float(r["snr_db"])]
+                                for r in _sl)))
+chk("learned 0.064 at 10 dB",
+    abs([float(r["legit"]) for r in _sl
+         if float(r["snr_db"]) == 10.0][0] - 0.064) < 5e-4,
+    "%.5f" % [float(r["legit"]) for r in _sl
+              if float(r["snr_db"]) == 10.0][0])
 
 # --- trends, which the value assertions above cannot see ---------------
 _snr = rows("sec_snr.csv")

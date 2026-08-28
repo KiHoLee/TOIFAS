@@ -15,4 +15,4 @@ V7 symbolic identities,exact,exact,0,0,PASS
 V8 cross-period remainder,0.0,0.000337,0.000337,0.0005,PASS
 V9 score-variance ratio,2.8,2.8252,0.0252,0.05,PASS
 V10 format-matched OMA at 10 dB,0.055,0.05520,0.00020,0.001,PASS
-V11 OMA closed form vs Monte Carlo,0.081245,0.080925,0.0039,0.01,PASS
+V11 OMA closed form vs Monte Carlo,0.081118,0.080925,0.0024,0.01,PASS
