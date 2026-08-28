@@ -59,8 +59,9 @@ def cell(x: str, bold: bool, wide: bool = False) -> str:
 def compare_table():
     print("% Table: scheme comparison (from sec_compare.csv)")
     rows = list(csv.DictReader(open(DATA / "sec_compare.csv")))
-    order = ["public_mask", "perm_key", "index_cipher", "oma_plain",
-             "proposed", "proposed_learned"]
+    # 9.3: the proposal first, as every figure legend lists it
+    order = ["proposed", "proposed_learned", "public_mask", "perm_key",
+             "index_cipher", "oma_plain"]
     rows.sort(key=lambda r: order.index(r["scheme"]))
     # stage_E does not jam the orthogonal reference, because the jammer an
     # OMA user faces is targeted at public slots rather than mask-matched

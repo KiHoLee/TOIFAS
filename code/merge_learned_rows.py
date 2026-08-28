@@ -64,6 +64,8 @@ def main():
                   {"scheme": "Invariant, KM (lrn.)",
                    "legit": "%.6f" % lg, "eve": "%.6f" % ev,
                    "entropy_bits": ent})
+    # 9.3: the proposal first, as every figure legend lists it
+    rows.sort(key=lambda x: 0 if x["scheme"].startswith("Invariant") else 1)
     write("refresh_summary.csv", fields, rows)
     print("refresh_summary.csv   Invariant, KM (lrn.)  legit %.5f  eve %.5f"
           % (lg, ev))

@@ -248,7 +248,7 @@ def _rank(label):
 def place_legend(ax, cands=("lower left", "upper left", "center left",
                            "center right", "lower center", "upper right",
                            "upper center", "center", "lower right"),
-                 sizes=(9.2, 8.8, 8.4, 8.0, 7.6, 7.2, 6.8, 6.4), ncol=1):
+                 sizes=(9.2, 8.8, 8.4, 8.0, 7.6, 7.4), ncol=1):
     """Choose the location and font size whose box the fewest curve points
     fall inside, scored on rendered geometry rather than guessed from the
     data. The size sweep is what makes a long label set placeable: a
@@ -342,7 +342,7 @@ def fig_snr():
     # the chance level lies within 3.5e-4 of the wrong-key curve, so it is
     # drawn for reference but left out of the legend, which the caption
     # names instead; five long entries leave this figure no clear corner
-    ax.plot(x, col(r, "chance"), color=C_CH, ls="-.", lw=0.9)
+    ax.plot(x, col(r, "chance"), color=C_CH, ls=":", lw=0.9)
     ax.set_xlabel("SNR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
@@ -360,7 +360,8 @@ def fig_keylen():
     r = load("sec_keylen.csv")
     x = col(r, "L", int)
     fig, ax = plt.subplots()
-    ax.semilogy(x, col(r, "legit_ser"), **STY["km_str"], label=LBL["legit"])
+    ax.semilogy(x, col(r, "legit_ser"), **STY["km_str"], markevery=(0, 2),
+                label=LBL["legit"], **UNDER)
     rl = load("sec_keylen_learned.csv")
     ax.semilogy(col(rl, "L", int), col(rl, "legit_ser"), **STY["km_lrn"], label=LBL["legit_learned"])
     op = [(l, v) for l, v in zip(x, col(r, "oma")) if not math.isnan(v)]
@@ -377,14 +378,13 @@ def fig_keylen():
     assert min(float(r["eve_ser"]) for r in rp) > 0.999,         "the permutation outsider left the random-guess level"
     ax.semilogy(col(rp, "L", int), col(rp, "legit_ser"), **STY["perm"],
                 markevery=(1, 2), label=LBL["perm"], **OVER)
-    ax.set_ylim(top=22.0)    # headroom above the flat eavesdropper curve
-    # an error rate cannot exceed one, and the room below the data holds
-    # the legend, since every curve decays to the right
-    ax.set_ylim(top=1.4, bottom=1.2e-2)
+    # every curve is high at short key lengths and decays to the right,
+    # so the lower left is clear and the limits only frame the data
+    ax.set_ylim(top=1.4, bottom=8.0e-3)
     ax.set_xlabel("Key length $L$")
     ax.set_ylabel("SER")
     ax.set_xscale("log", base=2)
-    place_legend(ax)
+    place_legend(ax, cands=("lower left",))
     save(fig, "fig_sec_keylen")
 
 
@@ -419,7 +419,7 @@ def fig_jam():
     # Behind the legend rather than through it. The placement guard skips
     # axis-spanning lines, so it cannot move the legend off this one, and
     # a reference drawn along the legend frame reads as part of the box.
-    ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9, zorder=0)
+    ax.axhline(nojam, color=C_CH, ls=":", lw=0.9, zorder=0)
     ax.set_ylim(2.5e-2, 1.4)
     # a log axis spanning little more than a decade prints minor labels
     # like 6x10^-1 that consume the left margin, so only the decades are
@@ -524,14 +524,17 @@ def fig_kpa():
     # one scheme, three collection SNRs, so the marker stays the
     # scheme's and only the line style and the fill carry the SNR;
     # borrowing another scheme's marker shape would read as that scheme
-    sty = {0.0: ("o", "-"), 10.0: ("o", "--"), 20.0: ("o", ":")}
-    for off, (snr, (mk, ls)) in enumerate(sty.items()):
+    # the three curves are one scheme at three collection SNRs, and the
+    # 10 and 20 dB ones run within 0.001 of each other from four frames
+    # on, so face and width separate them rather than the dash alone
+    sty = {0.0: ("o", "-", 2.6, None), 10.0: ("o", "--", 1.5, "none"),
+           20.0: ("o", ":", 1.0, "none")}
+    for off, (snr, (mk, ls, lw, mfc)) in enumerate(sty.items()):
         rows = [row for row in r if float(row["snr_db"]) == snr]
         n = [float(row["n_frames"]) for row in rows]
         ser = [float(row["eve_ser"]) for row in rows]
         ax.semilogx(n, ser, color=STY["km_str"]["color"], marker=mk, ls=ls,
-                    markevery=(off, 4),
-                    markerfacecolor="none" if off else None,
+                    lw=lw, markevery=(off, 4), markerfacecolor=mfc,
                     label=f"KM (str.), {int(snr)} dB")
         if snr == 10.0:
             kl = [q for q in load("kpa_learned.csv")
@@ -593,6 +596,12 @@ def main():
     run_all()
     if PL_CHOSEN:
         PL_FORCED = min(PL_CHOSEN)
+        # 7.4 canvas points is 6.0 on the page at the 0.74-column include
+        # width, which is the floor the standard sets. Falling below it
+        # would mean one figure had dragged every other one down.
+        assert PL_FORCED >= 7.4, (
+            "legend fell to %.1f pt; give the failing figure headroom "
+            "or move a reference entry to its caption" % PL_FORCED)
         print("[uniform] legend size %.1f pt on every figure" % PL_FORCED)
         PL_CHOSEN.clear()
         run_all()
