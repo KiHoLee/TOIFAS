@@ -84,18 +84,17 @@ STY = {
 
 # fixed label dictionary: tables and prose copy these strings verbatim
 LBL = {
-    "legit": "KM (structured)",
-    "legit_learned": "KM (learned)",
+    "legit": "KM (str.)",
+    "legit_learned": "KM (lrn.)",
     "oma": "OMA",
     "eve_pub": "Eavesdropper, public masks",
     "eve_key": "Eavesdropper",     # the wrong-key condition is in the caption
     "chance": "Random guess",
     "nojam": "No jammer",
-    "mask": "KM (structured)",
+    "mask": "KM (str.)",
     "perm": "Permutation key",
     "pad": "Index cipher",
     "insider": "Insider",
-    "legit_ref": "Legitimate rate",
     "outsider": "Outsider",
 }
 # deliberate-layering style for the LOWER of two coinciding curves
@@ -223,6 +222,29 @@ def main_legit(snr_db="10"):
     raise KeyError("no %s dB row in sec_snr.csv" % snr_db)
 
 
+
+# Legend order, applied by place_legend to whatever subset a figure
+# draws: the proposal first, then the comparison schemes in the order of
+# Table IV, then adversaries, then reference levels. Entries not listed
+# keep their plot order after the ranked ones.
+LEGEND_ORDER = [
+    "KM (str.)", "KM (lrn.)",
+    "Public masks", "Permutation key", "Index cipher", "OMA",
+    "Eavesdropper", "Eavesdropper, keyed", "Eavesdropper, public masks",
+    "Outsider", "Insider",
+    "No jammer", "Random guess",
+]
+
+
+def _rank(label):
+    """Rank a legend label, matching the collection-SNR variants of
+    Fig. 7 on their scheme prefix so they stay together and in order."""
+    for i, name in enumerate(LEGEND_ORDER):
+        if label == name or label.startswith(name + ","):
+            return i
+    return len(LEGEND_ORDER)
+
+
 def place_legend(ax, cands=("lower left", "upper left", "center left",
                            "center right", "lower center", "upper right",
                            "upper center", "center", "lower right"),
@@ -247,7 +269,11 @@ def place_legend(ax, cands=("lower left", "upper left", "center left",
     best = None
     for size in sizes:
         for loc in cands:
-            leg = ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
+            h, l = ax.get_legend_handles_labels()
+            idx = sorted(range(len(l)), key=lambda k: (_rank(l[k]), k))
+            h = [h[k] for k in idx]
+            l = [l[k] for k in idx]
+            leg = ax.legend(h, l, loc=loc, prop={"size": size}, ncol=ncol,
                             handlelength=1.4, columnspacing=0.9,
                             handletextpad=0.5, borderaxespad=0.55,
                             framealpha=1.0)
@@ -270,13 +296,21 @@ def place_legend(ax, cands=("lower left", "upper left", "center left",
             if best is None or hits < best[2]:
                 best = (loc, size, hits)
             if hits == 0:
-                ax.legend(loc=loc, prop={"size": size}, ncol=ncol,
+                h, l = ax.get_legend_handles_labels()
+                idx = sorted(range(len(l)), key=lambda k: (_rank(l[k]), k))
+                h = [h[k] for k in idx]
+                l = [l[k] for k in idx]
+                ax.legend(h, l, loc=loc, prop={"size": size}, ncol=ncol,
                           handlelength=1.4, columnspacing=0.9,
                           handletextpad=0.5, borderaxespad=0.55,
                             framealpha=1.0)
                 PL_CHOSEN.append(size)
                 return best
-    ax.legend(loc=best[0], prop={"size": best[1]}, ncol=ncol,
+    h, l = ax.get_legend_handles_labels()
+    idx = sorted(range(len(l)), key=lambda k: (_rank(l[k]), k))
+    h = [h[k] for k in idx]
+    l = [l[k] for k in idx]
+    ax.legend(h, l, loc=best[0], prop={"size": best[1]}, ncol=ncol,
               handlelength=1.4, columnspacing=0.9, handletextpad=0.5,
               borderaxespad=0.55, framealpha=1.0)
     PL_CHOSEN.append(best[1])
@@ -390,6 +424,9 @@ def fig_sens():
     fig, ax = plt.subplots()
     ax.plot(x, col(r, "ser_mask"), **STY["km_str"],
             markevery=(0, 3), label=LBL["mask"], **UNDER)
+    rs = load("sec_sens_learned.csv")
+    ax.plot(col(rs, "frac"), col(rs, "ser_mask"), **STY["km_lrn"],
+            markevery=(1, 3), label=LBL["legit_learned"])
     ax.plot(x, col(r, "ser_perm"), **STY["perm"],
             markevery=(1, 3), label=LBL["perm"], **OVER)
     ax.plot(x, col(r, "ser_pad"), **STY["pad"],
@@ -398,9 +435,6 @@ def fig_sens():
     # copy of the configuration constants
     chance = float(load("sec_snr.csv")[0]["chance"])
     ax.axhline(chance, color=C_CH, ls=":", lw=0.9, label=LBL["chance"])
-    # the narration reads these curves against the legitimate rate
-    ax.axhline(main_legit(), color=C_OMA, ls=(0, (4, 2)), lw=0.9,
-               label=LBL["legit_ref"])
     ax.set_xlabel("Fraction of the key recovered")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xlim(0, 1)
@@ -420,9 +454,9 @@ def fig_brute():
                 markevery=(1, 3), label=LBL["pad"], **OVER)
     ax.semilogx(x, col(r, "ser_mask"), **STY["km_str"],
                 markevery=(2, 3), label=LBL["mask"])
-    legit = main_legit()
-    ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
-               label=LBL["legit_ref"])
+    rb = load("sec_brute_learned.csv")
+    ax.semilogx(col(rb, "K"), col(rb, "ser_mask"), **STY["km_lrn"],
+                markevery=(1, 3), label=LBL["legit_learned"])
     ax.set_xlabel("Number of key guesses $K$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_ylim(0.0, 1.05)      # keep the reference line off the spine
@@ -438,6 +472,10 @@ def fig_real():
     # legitimate and OMA curves are separate at this frame
     ax.semilogy(x, col(r, "ter_legit"), **STY["km_str"],
                 markevery=(0, 2), label=LBL["legit"], **UNDER)
+    rt = load("real_sec_ter_learned.csv")
+    ax.semilogy(col(rt, "snr_db"), col(rt, "ter_legit"),
+                **STY["km_lrn"], markevery=(1, 2),
+                label=LBL["legit_learned"])
     ax.semilogy(x, col(r, "ter_oma"), **STY["oma"],
                 markevery=(1, 2), label=LBL["oma"], **OVER)
     ax.semilogy(x, col(r, "ter_insider"), **STY["insider"],
@@ -484,9 +522,6 @@ def fig_kpa():
     # eavesdropper curves, namely the four-user average of eval_ser_sse
     # in the main configuration, rather than the user-1 convention of the
     # scheme-comparison table
-    legit = main_legit()
-    ax.axhline(legit, color=C_OMA, ls=(0, (4, 2)), lw=0.9,
-               label=LBL["legit_ref"])
     ax.set_xlabel("Known-plaintext frames $N$")
     ax.set_ylabel("Eavesdropper SER")
     ax.set_xscale("log", base=2)

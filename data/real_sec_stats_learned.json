@@ -1,0 +1,32 @@
+{
+ "vocab_size": 30522,
+ "n_texts": 2000,
+ "frames": 24998,
+ "repeats": 8,
+ "decisions_per_point": 799936,
+ "distinct_tokens": 10486,
+ "token_collision": 0.006535221793661566,
+ "max_token_id": 29599,
+ "headlines_scored": 1948,
+ "headline_runs": 4,
+ "recovery": {
+  "20": {
+   "legit": 0.7023870636550308,
+   "eve": 0.0,
+   "insider": 0.0,
+   "oma": 0.6463039014373717
+  },
+  "24": {
+   "legit": 0.8787217659137577,
+   "eve": 0.0,
+   "insider": 0.0,
+   "oma": 0.8390657084188912
+  },
+  "28": {
+   "legit": 0.9477669404517454,
+   "eve": 0.0,
+   "insider": 0.0,
+   "oma": 0.9319815195071869
+  }
+ }
+}

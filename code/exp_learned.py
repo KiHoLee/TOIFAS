@@ -157,3 +157,81 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def sens():
+    """Fig. 5's learned curve: eavesdropper SER against the fraction of
+    the key the attacker holds. correlated_masks builds a substitute at
+    a prescribed correlation to any real key, so the sweep applies to a
+    learned key exactly as to a sign pattern."""
+    from exp_full import correlated_masks
+    print("[learned] key sensitivity ...")
+    m = learned_model()
+    F, TR = 600_000, 12
+    true_m = m.masks().detach().cpu()
+    gen = torch.Generator().manual_seed(31)
+    fracs = [0.0, 0.2, 0.4, 0.6, 0.75, 0.85, 0.9, 0.92, 0.94, 0.955,
+             0.97, 0.985, 1.0]
+    rows = []
+    for f in fracs:
+        acc = [eval_ser_eve(m, correlated_masks(true_m, f, gen), [10.0],
+                            frames=F // TR, seed=777 + 17 * t)[0]
+               for t in range(TR)]
+        rows.append((f, sum(acc) / len(acc)))
+    write_csv(DATA / "sec_sens_learned.csv", ["frac", "ser_mask"], rows)
+    print("   f=0 %.4f  f=1 %.4f" % (rows[0][1], rows[-1][1]))
+
+
+def brute():
+    """Fig. 6's learned curve. The best-of-K correlation is a property of
+    the key space, which both realizations share at the same L, so only
+    the sensitivity mapping differs and it is re-read from the learned
+    sweep."""
+    import csv as _csv
+    import numpy as np
+    print("[learned] brute-force search ...")
+    with open(DATA / "sec_sens_learned.csv") as f:
+        cmp_rows = list(_csv.DictReader(f))
+    f_arr = np.array([float(r["frac"]) for r in cmp_rows])
+    mask_arr = np.array([float(r["ser_mask"]) for r in cmp_rows])
+    L = MAIN_D // 4
+    ks = [1, 3, 10, 30, 100, 300, 1_000, 3_000, 10_000, 30_000, 65_536,
+          100_000, 300_000, 1_000_000]
+    rng = np.random.default_rng(2026)
+    rows = []
+    for K in ks:
+        best = np.sqrt(rng.beta(0.5, (L - 1) / 2.0, size=(400, K)).max(1))
+        rows.append((K, float(np.mean(np.interp(best, f_arr, mask_arr)))))
+    write_csv(DATA / "sec_brute_learned.csv", ["K", "ser_mask"], rows)
+    print("   K=1e6 %.4f" % rows[-1][1])
+
+
+def real():
+    """Fig. 8's learned curves.
+
+    exp_real_sec writes fixed file names, so the structured artifacts are
+    held aside, the run is repeated with the learned model, its output is
+    copied to *_learned names, and the originals are put back. A failure
+    anywhere restores them.
+    """
+    import shutil
+    import exp_real_sec as R
+    print("[learned] real token streams ...")
+    names = ("real_sec_ter.csv", "real_sec_stats.json")
+    saved = {n: (DATA / n).read_bytes() for n in names
+             if (DATA / n).exists()}
+    orig = R.main_model
+    try:
+        R.main_model = lambda **kw: learned_model(
+            d=kw.get("d", MAIN_D), P=kw.get("P", 4),
+            vu=kw.get("vu", 16), U=kw.get("U", 4))
+        R.main()
+        for n in names:
+            if (DATA / n).exists():
+                shutil.copyfile(DATA / n,
+                                DATA / n.replace(".", "_learned.", 1))
+    finally:
+        R.main_model = orig
+        for n, blob in saved.items():
+            (DATA / n).write_bytes(blob)
+    print("   learned artifacts written, structured ones restored")

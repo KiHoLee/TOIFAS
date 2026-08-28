@@ -121,14 +121,14 @@ chk("perm KPA at N=6 near its own legitimate",
 # --- refresh ----------------------------------------------------------
 rs = {x["scheme"]: x for x in rows("refresh_summary.csv")}
 chk("refresh 364.6 bits",
-    round(float(rs["Invariant"]["entropy_bits"]), 1) == 364.6,
-    "%.3f" % float(rs["Invariant"]["entropy_bits"]))
+    round(float(rs["Invariant, KM (str.)"]["entropy_bits"]), 1) == 364.6,
+    "%.3f" % float(rs["Invariant, KM (str.)"]["entropy_bits"]))
 chk("fixed key 23.8 bits",
     round(float(rs["None (fixed key)"]["entropy_bits"]), 1) == 23.8,
     "%.4f" % float(rs["None (fixed key)"]["entropy_bits"]))
 chk("invariant refresh free",
-    abs(float(rs["Invariant"]["legit"]) - float(rs["None (fixed key)"]["legit"]))
-    < 0.001, "%.4f vs %.4f" % (float(rs["Invariant"]["legit"]),
+    abs(float(rs["Invariant, KM (str.)"]["legit"]) - float(rs["None (fixed key)"]["legit"]))
+    < 0.001, "%.4f vs %.4f" % (float(rs["Invariant, KM (str.)"]["legit"]),
                                float(rs["None (fixed key)"]["legit"])))
 
 # --- real tokens ------------------------------------------------------
@@ -390,7 +390,8 @@ if HAVE_TEX:
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         make_tables.compare_table()
-        make_tables.maskfam_table()
+        # the key-family table was folded into the Section VI-F prose
+        pass
         make_tables.refresh_tables()
     rows = [r.strip() for r in buf.getvalue().split("\n")
             if r.rstrip().endswith(r"\\")]

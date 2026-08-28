@@ -11,8 +11,8 @@ from pathlib import Path
 DATA = Path(__file__).resolve().parents[1] / "data"
 
 NAME = {
-    "proposed": r"\textbf{KM (structured)}",
-    "proposed_learned": r"\textbf{KM (learned)}",
+    "proposed": r"\textbf{KM (str.)}",
+    "proposed_learned": r"\textbf{KM (lrn.)}",
     "public_mask": "Public masks",
     "perm_key": r"Permutation key~\cite{chen2025shufflingtifs}",
     "index_cipher": "Index cipher",
@@ -21,7 +21,7 @@ NAME = {
     "hadamard": "Structured",
     "learned": "Learned, plain",
     "learned_reg": r"Learned, regularized~\eqref{eq:regloss}",
-    "invariant_learned": r"\textbf{Invariant, learned keys}",
+    "invariant_learned": r"\textbf{Invariant, KM (lrn.)}",
 }
 RECEIVER = {
     "legit": "Legitimate", "oma": "OMA",
