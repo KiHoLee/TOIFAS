@@ -520,9 +520,8 @@ def fig_kpa():
                         label=f"KM (lrn.), {int(snr)} dB")
     try:
         p = load("pkpa.csv")
-        ax.semilogx(col(p, "n_frames"), col(p, "eve_ser"), color=C_MATCH,
-                    marker="P", ls="--", markevery=(3, 4),
-                    label=LBL["perm"] + ", 20 dB")
+        ax.semilogx(col(p, "n_frames"), col(p, "eve_ser"), **STY["perm"],
+                    markevery=(3, 4), label=LBL["perm"] + ", 20 dB")
     except FileNotFoundError:
         print("[skip] pkpa.csv not present yet")
     # legitimate reference measured with the SAME estimator as the
