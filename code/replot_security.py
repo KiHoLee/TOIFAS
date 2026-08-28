@@ -25,6 +25,7 @@ import math
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -378,26 +379,29 @@ def fig_keylen():
 
 
 def fig_jam():
-    """Target-user SER against JSR in four cases. A linear axis is used
-    because the range spans less than one decade, where a log axis would
-    print wide minor tick labels that crowd out the y label. The
-    no-jammer reference is named in the caption rather than in the
-    legend, which keeps the legend four rows tall."""
+    """Target-user SER against JSR in five cases, on a log ordinate.
+
+    With the unjammed reference the range spans 0.053 to 0.998, over a
+    decade, so the axis carries two major ticks and the minor tick
+    labels that crowd a sub-decade log axis are suppressed. The room
+    below the data holds the legend, which is why the earlier linear
+    version reserved a band below zero instead. The no-jammer reference
+    is named in the caption rather than in the legend."""
     r = load("sec_jam_cmp.csv")
     x = col(r, "jsr_db")
     me = max(1, len(x) // 8)
     fig, ax = plt.subplots()
     rj = load("sec_jam_learned.csv")
-    ax.plot(col(rj, "jsr_db"), col(rj, "blind"), **STY["km_lrn"],
+    ax.semilogy(col(rj, "jsr_db"), col(rj, "blind"), **STY["km_lrn"],
             markevery=(1, me), label=LBL["legit_learned"])
-    ax.plot(x, col(r, "matched"), **STY["pub"],
+    ax.semilogy(x, col(r, "matched"), **STY["pub"],
             markevery=me, label="Public masks")
-    ax.plot(x, col(r, "oma_targeted"), **STY["oma"],
+    ax.semilogy(x, col(r, "oma_targeted"), **STY["oma"],
             markevery=me, label=LBL["oma"])
     # the two blind curves agree to 0.002; deliberate layering
-    ax.plot(x, col(r, "blind"), **STY["km_str"],
+    ax.semilogy(x, col(r, "blind"), **STY["km_str"],
             markevery=(0, me), label=LBL["mask"], **UNDER)
-    ax.plot(x, col(r, "perm_blind"), **STY["perm"],
+    ax.semilogy(x, col(r, "perm_blind"), **STY["perm"],
             markevery=(me // 2, me), label=LBL["perm"], **OVER)
     nojam = float(load("sec_jam.csv")[0]["nojam"])
     # the unjammed reference is named in the caption rather than in the
@@ -406,8 +410,11 @@ def fig_jam():
     # axis-spanning lines, so it cannot move the legend off this one, and
     # a reference drawn along the legend frame reads as part of the box.
     ax.axhline(nojam, color=C_OMA, ls=(0, (1, 3)), lw=0.9, zorder=0)
-    ax.set_ylim(-0.42, 1.05)
-    ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_ylim(6e-3, 1.4)
+    # a log axis spanning little more than a decade prints minor labels
+    # like 6x10^-1 that consume the left margin, so only the decades are
+    # labelled
+    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel("JSR (dB)")
     ax.set_ylabel("SER")
     ax.set_xlim(min(x), max(x))
