@@ -52,7 +52,12 @@ plt.rcParams.update({
     "grid.alpha": 0.6,
     "lines.linewidth": 1.5,
     "lines.markersize": 5.2,
-    "figure.figsize": (3.15, 2.25),   # shorter canvas: same printed width and font size, less page height
+    "figure.figsize": (3.15, 2.25),   # 9.3 asks for an 8:6 axes box, which
+    # this canvas does not give: it yields 2.378 by 1.643 in, a ratio
+    # of 1.45. Restoring 8:6 needs a 2.443 in canvas and takes the
+    # manuscript to 14 pages against a hard 13-page limit, so the
+    # aspect is a recorded deviation. The other two conditions hold,
+    # one canvas size for every figure and one include width.
     "pdf.fonttype": 42,
 })
 AXES_RECT = dict(left=0.215, right=0.970, top=0.955, bottom=0.225)
@@ -63,7 +68,8 @@ C_OMA = "#7f8c8d"       # orthogonal multiple access
 C_PUB = "#16a085"       # public masks
 C_PERM = "#8e44ad"      # permutation key
 C_PAD = "#a0522d"       # index cipher
-C_EVE = "#2c5fa8"       # an adversary of KM
+C_EVE = "#2c5fa8"       # an outsider of KM
+C_INS = "#00806b"       # an insider of KM, which sits just below it
 C_CH = "#95a5a6"        # chance and reference levels
 C_MATCH = C_PUB         # the matched jammer is what public masks admit
 
@@ -80,7 +86,7 @@ STY = {
     "perm":    dict(color=C_PERM, marker="X", ls="--"),
     "pad":     dict(color=C_PAD, marker="P", ls="-."),
     "eve":     dict(color=C_EVE, marker="s", ls="--"),
-    "insider": dict(color=C_EVE, marker="v", ls="-."),
+    "insider": dict(color=C_INS, marker="v", ls="-."),
 }
 
 # fixed label dictionary: tables and prose copy these strings verbatim

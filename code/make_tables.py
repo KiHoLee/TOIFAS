@@ -16,7 +16,7 @@ NAME = {
     "public_mask": "Public masks",
     "perm_key": r"Permutation key~\cite{chen2025shufflingtifs}",
     "index_cipher": "Index cipher",
-    "oma_plain": "OMA (no encryption)",
+    "oma_plain": "OMA",
     "random": "Random",
     "hadamard": "Structured",
     "learned": "Learned, plain",
