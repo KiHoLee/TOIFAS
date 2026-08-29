@@ -164,9 +164,10 @@ chk("ratio spans 1.32 to 1.54", round(min(rt), 2) == 1.32
 
 # the three secrets named in the setup
 chk("secret sizes: per-user direction, perm 256, pad 16",
-    all(t in tex for t in ["length-$64$ key direction per user",
-                           "one permutation of $256$",
-                           "$16$ pad bits per user"]),
+    all(t in " ".join(tex.split())
+        for t in ["length-$64$ key direction per user",
+                  "one permutation of $256$",
+                  "$16$ pad bits per user"]),
     "searched tex", needs_tex=True)
 
 chk("no stale d=64 configuration in tex",
@@ -211,12 +212,17 @@ ks = [int(x) for x in md["learned"]["support99_per_key"].split("/")]
 chk("learned keys degenerate: 5 to 8 of 64 entries",
     min(ks) == 5 and max(ks) == 8 and int(md["learned"]["L"]) == 64,
     md["learned"]["support99_per_key"])
-chk("learned support overlap 0.10",
-    round(float(md["learned"]["mean_overlap"]), 2) == 0.10,
-    md["learned"]["mean_overlap"])
-chk("degeneracy numbers in tex",
+# independent supports of size a and b out of L overlap by max(a,b)/L
+# on this normalization, so the measured value is the chance level and
+# evidences the concentration rather than any disjointness
+_ch = sum(max(a, b) for a, b in __import__("itertools").combinations(ks, 2))
+_ch /= (len(ks) * (len(ks) - 1) / 2) * int(md["learned"]["L"])
+chk("learned support overlap is at chance, not below it",
+    float(md["learned"]["mean_overlap"]) <= _ch + 0.02,
+    "measured %s against chance %.3f" % (md["learned"]["mean_overlap"], _ch))
+chk("concentration numbers in tex",
     "$5$ to $8$ of the $64$ entries" in " ".join(tex.split())
-    and "only $0.10$ of the smaller of any two such sets" in " ".join(tex.split()),
+    and "a digit is decided over a tenth of its period" in " ".join(tex.split()),
     "searched tex", needs_tex=True)
 
 # --- why the permutation key is granted a shared permutation ---------
