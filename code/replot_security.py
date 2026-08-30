@@ -52,14 +52,11 @@ plt.rcParams.update({
     "grid.alpha": 0.6,
     "lines.linewidth": 1.5,
     "lines.markersize": 5.2,
-    "figure.figsize": (3.15, 2.25),   # 9.3 asks for an 8:6 axes box, which
-    # this canvas does not give: it yields 2.378 by 1.643 in, a ratio
-    # of 1.45. Restoring 8:6 needs a 2.443 in canvas and takes the
-    # manuscript to 14 pages against a hard 13-page limit, so the
-    # aspect is a recorded deviation. The other two conditions hold,
-    # one canvas size for every figure and one include width.
+    "figure.figsize": (3.15, 2.443),  # 8:6 axes box with the AXES_RECT below
     "pdf.fonttype": 42,
 })
+
+# one axes rectangle for every figure, so the boxes align across the page
 AXES_RECT = dict(left=0.215, right=0.970, top=0.955, bottom=0.225)
 
 C_LEGIT = "#c0392b"     # KM, structured keys
